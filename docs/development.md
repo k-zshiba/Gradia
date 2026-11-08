@@ -33,7 +33,7 @@ cargo test --locked --manifest-path src-tauri/Cargo.toml
 cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets
 ```
 
-通常CIは署名鍵を使用せず、`npm run package:unsigned`でインストーラーの生成まで確認します。本番の署名付き配布はタグ用ワークフローで行います。成果物の場所は`src-tauri/target/release/bundle/nsis/`です。
+PRと手動実行のCIは署名鍵を使用せず、全テストと`npm run package:unsigned`によるインストーラー生成まで確認します。mainへのpushでは`node scripts/verify-release.mjs`による整合性検査だけを実行し、依存導入・Rustコンパイルは行いません。本番の全検証と署名付き配布はタグ用ワークフローで行います。成果物の場所は`src-tauri/target/release/bundle/nsis/`です。
 
 テストの一時出力は`.tools/playwright-results/`に、検証で明示的に保存する画像・JSONの結果は`test-results/`に保存します。原本・モデル・資格情報・テスト結果・ビルド生成物はコミットしません。
 
