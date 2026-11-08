@@ -41,6 +41,7 @@ export const api = {
   translate: (documentId: string, revision: string, segmentIds: string[]) =>
     call<string>("start_translation", { documentId, revision, segmentIds }),
   cancel: (jobId: string) => call<void>("cancel_job", { jobId }),
+  prepareUpdate: () => call<void>("prepare_update"),
   history: (id: string, revision: string) =>
     call<ChatMessage[]>("get_history", { id, revision }),
   chat: (

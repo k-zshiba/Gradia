@@ -19,3 +19,6 @@ public/pdfjs/
 .env
 .env.*
 !.env.example
+*.key
+*.key.*
+*.pem

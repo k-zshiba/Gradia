@@ -1381,3 +1381,51 @@ small {
       3px min(var(--right), 300px);
   }
 }
+.update-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 6px 8px;
+}
+.update-dialog {
+  width: min(560px, 90vw);
+  padding: 0;
+  color: #263a32;
+}
+.update-dialog:not([open]) {
+  display: none;
+}
+.update-dialog::backdrop {
+  background: #1e32254d;
+  backdrop-filter: blur(3px);
+}
+.update-body {
+  padding: 20px 28px;
+  line-height: 1.8;
+}
+.update-notes {
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: inherit;
+  background: #f5f5ef;
+  padding: 12px;
+  border-radius: 8px;
+}
+.update-error {
+  color: #a03c30;
+  white-space: pre-wrap;
+}
+.update-dialog progress {
+  width: 100%;
+  accent-color: #315c46;
+}
+.update-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 18px 28px;
+  border-top: 1px solid var(--line);
+}

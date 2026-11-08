@@ -89,9 +89,35 @@ async fn cancel_job(job_id: String, state: State<'_, AppState>) -> Result<()> {
     }
     Ok(())
 }
+#[tauri::command]
+async fn prepare_update(state: State<'_, AppState>) -> Result<()> {
+    let tokens = state
+        .jobs
+        .lock()
+        .await
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    for token in tokens {
+        token.cancel();
+    }
+    // Jobs persist their final/interrupted state before removing themselves.
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        while !state.jobs.lock().await.is_empty() {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .map_err(|_| "処理の終了を待っています。少し待って更新をやり直してください".to_string())?;
+    if let Some(mut engine) = state.engine.lock().await.take() {
+        let _ = engine.child.kill().await;
+    }
+    Ok(())
+}
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let root = app.path().app_local_data_dir()?;
             // Development integration tests use an isolated database and credentials directory.
@@ -134,6 +160,7 @@ pub fn run() {
             get_settings,
             save_settings,
             cancel_job,
+            prepare_update,
             translation::start_translation,
             translation::start_engine,
             translation::stop_engine,

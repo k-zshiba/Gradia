@@ -42,6 +42,7 @@ import {
   SettingsDialog,
 } from "./components";
 import { previewDocument, previewTranslations } from "./preview";
+import { UpdateControl } from "./UpdateControl";
 import type {
   Document,
   Segment,
@@ -616,6 +617,18 @@ export default function App() {
           <span className="version">LOCAL WORKSPACE</span>
         </a>
         <div className="header-right">
+          <UpdateControl
+            beforeInstall={async () => {
+              if (doc && doc.id !== "sample")
+                await api.preference(
+                  doc.id,
+                  doc.revision,
+                  doc.ratio,
+                  visible[0] || doc.position,
+                );
+              await api.prepareUpdate();
+            }}
+          />
           <span className="local-badge">
             <i />
             このPCに保存

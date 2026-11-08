@@ -165,11 +165,12 @@ export async function extractPdf(
   bytes: Uint8Array,
   onProgress?: (page: number, total: number) => void,
 ): Promise<{ segments: Segment[]; warnings: string[] }> {
-  const pdf = await getDocument({ ...pdfOptions, data: bytes.slice() }).promise;
+  const loadingTask = getDocument({ ...pdfOptions, data: bytes.slice() });
   const segments: Segment[] = [];
   const warnings: string[] = [];
   let block = 0;
   try {
+    const pdf = await loadingTask.promise;
     for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
       onProgress?.(pageNo, pdf.numPages);
       const page = await pdf.getPage(pageNo);
@@ -231,7 +232,7 @@ export async function extractPdf(
       page.cleanup();
     }
   } finally {
-    await pdf.destroy();
+    await loadingTask.destroy();
   }
   return { segments: orderSegments(segments), warnings };
 }

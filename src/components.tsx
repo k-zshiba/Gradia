@@ -161,26 +161,30 @@ export function PdfOriginal({
   const [loaded, setLoaded] = useState(0);
   useEffect(() => {
     let disposed = false;
+    let loadingTask: ReturnType<typeof getDocument> | undefined;
     setBusy(true);
     void api
       .pdf(document.id, document.revision)
-      .then(
-        (bytes) =>
-          getDocument({ ...pdfOptions, data: new Uint8Array(bytes) }).promise,
-      )
-      .then(async (doc) => {
-        if (disposed) {
-          await doc.destroy();
-          return;
-        }
+      .then((bytes) => {
+        if (disposed) return null;
+        loadingTask = getDocument({
+          ...pdfOptions,
+          data: new Uint8Array(bytes),
+        });
+        return loadingTask.promise;
+      })
+      .then((doc) => {
+        if (disposed || !doc) return;
         pdf.current = doc;
         setTotal(doc.numPages);
         setLoaded((v) => v + 1);
       })
-      .catch(onError);
+      .catch((error) => {
+        if (!disposed) onError(error);
+      });
     return () => {
       disposed = true;
-      void pdf.current?.destroy();
+      void loadingTask?.destroy().catch(() => {});
       pdf.current = null;
     };
   }, [document.id, document.revision]);
