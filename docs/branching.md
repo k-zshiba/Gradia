@@ -23,10 +23,10 @@ git switch -c feature/add-projects origin/main
 flowchart LR
   M[main] --> F["feature/目的 または fix/目的"]
   F --> P[PR・検証・確認]
-  P --> M2[mainへ取り込み]
+  P --> M2[mainへ取り込み・軽量チェック]
   M2 --> R[release/vX.Y.Z]
   R --> RP[バージョン・変更履歴のPR]
-  RP --> M3[mainへ取り込み・検証]
+  RP --> M3[mainへ取り込み・軽量チェック]
   M3 --> T[vX.Y.Zタグ]
   T --> B[Windowsビルド・Release公開]
 ```
@@ -35,7 +35,8 @@ flowchart LR
 
 - コミットは論理単位に分け、変更が必要な理由を記録します。コードにはHow、テストにはWhat、コードコメントにはWhy notを記載します。
 - PRのDescriptionは`Summary`、`What Changed`、`Why`の3項目のみを、この順に記載します。概要、変更内容、変更の必要性・判断理由をそれぞれの項目にまとめ、他の見出しや前置きは追加しません。
-- コード変更はWindows checksの成功を確認してから取り込みます。文書だけのPRではCIが省略されるため、リンク・図・手順を確認します。
+- コード変更は最新の`main`を反映し、PRのWindows checks（`test`）が成功したことを確認してから取り込みます。検証後にmainが進んだ場合は、再度反映して検証します。文書だけのPRではCIが省略されるため、リンク・図・手順を確認します。
+- mainへの取り込み後は整合性だけを確認する軽量チェック（`consistency`）を実行します。全テストとWindowsインストーラー生成はPR・手動実行・リリースタグで行います。
 - 取り込み方法は原則としてmerge commitです。理由ごとに分けたコミットを残します。公開済みブランチのforce-pushや公開済みコミットの書き換えは行いません。
 - 競合があれば`origin/main`を作業ブランチへmergeし、影響する検証を再実行します。
 - PRを取り込んだら、作業ブランチをローカル・GitHubから削除します。
