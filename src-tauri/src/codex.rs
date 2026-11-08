@@ -202,7 +202,7 @@ impl Bridge {
             queue: VecDeque::new(),
             server,
         };
-        bridge.rpc("initialize",json!({"clientInfo":{"name":"study-tool","title":"Study Tool","version":"0.1.0"},"capabilities":{"experimentalApi":false}})).await?;
+        bridge.rpc("initialize",json!({"clientInfo":{"name":"gradia","title":"Gradia","version":"0.1.0"},"capabilities":{"experimentalApi":false}})).await?;
         bridge
             .send(json!({"method":"initialized","params":{}}))
             .await?;
@@ -225,7 +225,7 @@ impl Bridge {
             let value: Value =
                 serde_json::from_str(&line).map_err(|_| "Codexの応答形式が不正です")?;
             if value.get("method").is_some() && value.get("id").is_some() {
-                self.send(json!({"id":value["id"],"error":{"code":-32601,"message":"Study Tool does not permit tools or approvals"}})).await?;
+                self.send(json!({"id":value["id"],"error":{"code":-32601,"message":"Gradia does not permit tools or approvals"}})).await?;
                 continue;
             }
             return Ok(value);

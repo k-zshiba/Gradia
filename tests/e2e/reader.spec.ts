@@ -7,13 +7,13 @@ test("opening source HTML directly shows launch instructions instead of a blank 
 }) => {
   await page.goto(pathToFileURL(resolve("index.html")).href);
   await expect(
-    page.getByRole("heading", { name: "Study Tool の起動" }),
+    page.getByRole("heading", { name: "Gradia の起動" }),
   ).toBeVisible();
   await expect(
     page.getByText("Start-Preview.cmd", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Study Tool の画面を開く" }),
+    page.getByRole("link", { name: "Gradia の画面を開く" }),
   ).toHaveAttribute("href", "http://127.0.0.1:1420");
 });
 test("reading, translation slider, original reveal and chat context", async ({

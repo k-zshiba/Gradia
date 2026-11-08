@@ -143,5 +143,5 @@ pub fn run() {
             codex::start_chat
         ])
         .run(tauri::generate_context!())
-        .expect("Study Toolを起動できませんでした");
+        .expect("Gradiaを起動できませんでした");
 }

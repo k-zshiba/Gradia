@@ -28,7 +28,7 @@ const env = {
 };
 let child, browser;
 async function launch() {
-  child = spawn(resolve("src-tauri/target/debug/study-tool.exe"), [], {
+  child = spawn(resolve("src-tauri/target/debug/gradia.exe"), [], {
     env,
     stdio: "ignore",
   });

@@ -43,7 +43,7 @@ try{
   });
   const rpc=(method,params)=>Promise.race([fatal,new Promise((resolve,reject)=>{const request=id++;pending.set(request,{resolve,reject});child.stdin.write(JSON.stringify({id:request,method,params})+'\n');})]);
   const next=()=>Promise.race([fatal,events.length?Promise.resolve(events.shift()):new Promise(resolve=>waiters.push(resolve))]);
-  const init=await rpc('initialize',{clientInfo:{name:'study-tool',title:'Study Tool',version:'0.1.0'},capabilities:{experimentalApi:false}});child.stdin.write(JSON.stringify({method:'initialized',params:{}})+'\n');
+  const init=await rpc('initialize',{clientInfo:{name:'gradia',title:'Gradia',version:'0.1.0'},capabilities:{experimentalApi:false}});child.stdin.write(JSON.stringify({method:'initialized',params:{}})+'\n');
   const thread=await rpc('thread/start',{sandbox:'read-only',approvalPolicy:'never',developerInstructions:'Use no tools. Answer the attached study question.'});
   const turn=await rpc('turn/start',{threadId:thread.thread.id,input:[{type:'text',text:JSON.stringify({question:'テスト',references:[{id:'b0s0',text:'Memory has an owner.'}]})}]});
   let answer='';let status;

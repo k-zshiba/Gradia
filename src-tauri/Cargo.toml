@@ -1,11 +1,11 @@
 [package]
-name = "study-tool"
+name = "gradia"
 version = "0.1.0"
 description = "Local reading, translation and study assistant"
 edition = "2021"
 
 [lib]
-name = "study_tool_lib"
+name = "gradia_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

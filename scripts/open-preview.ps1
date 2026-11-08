@@ -9,7 +9,7 @@ New-Item -ItemType Directory -Force -Path $toolsPath | Out-Null
 function Get-PreviewStatus {
     try {
         $response = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 2
-        if ($response.Content -notmatch 'Study Tool') {
+        if ($response.Content -notmatch 'Gradia') {
             throw 'Port 1420 is used by another application. Close it before starting this preview.'
         }
         return $true
@@ -43,6 +43,6 @@ if (-not (Get-PreviewStatus)) {
     if (-not $started) { throw 'Preview startup timed out. See .tools/preview-error.log.' }
     @{ pid = $previewProcess.Id; startedAt = $previewProcess.StartTime.ToUniversalTime().ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $toolsPath 'preview-process.json') -Encoding utf8
 }
-Write-Host ('Study Tool preview: ' + $url)
-Write-Host 'The browser preview uses sample data. Use Study Tool from the Start menu for local files and translation.'
+Write-Host ('Gradia preview: ' + $url)
+Write-Host 'The browser preview uses sample data. Use Gradia from the Start menu for local files and translation.'
 if (-not $NoBrowser) { Start-Process $url }

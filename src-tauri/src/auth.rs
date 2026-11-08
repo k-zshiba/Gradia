@@ -272,7 +272,7 @@ async fn login(app: &AppHandle, cancel: tokio_util::sync::CancellationToken) -> 
         if let Some(existing) = &existing {
             query.append_pair("id_token_hint", &existing.id_token);
         } else {
-            query.append_pair("agent_name_hint", "study-tool");
+            query.append_pair("agent_name_hint", "gradia");
         }
     }
     webbrowser::open(url.as_str()).map_err(|e| e.to_string())?;
@@ -309,7 +309,7 @@ async fn login(app: &AppHandle, cancel: tokio_util::sync::CancellationToken) -> 
                 let _=socket.write_all(b"HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n").await;
                 continue;
             }
-            let page = "Authentication received. You can close this tab and return to Study Tool.";
+            let page = "Authentication received. You can close this tab and return to Gradia.";
             let _=socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{page}",page.len()).as_bytes()).await;
             if query.contains_key("error") {
                 return Err("ChatGPTへの接続がキャンセルされました".into());

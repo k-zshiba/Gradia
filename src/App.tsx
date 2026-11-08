@@ -611,7 +611,7 @@ export default function App() {
             <BookOpen size={22} />
           </span>
           <strong>
-            study<span>tool</span>
+            Gra<span>dia</span>
           </strong>
           <span className="version">LOCAL WORKSPACE</span>
         </a>

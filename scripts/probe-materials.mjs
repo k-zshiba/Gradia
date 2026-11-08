@@ -47,7 +47,7 @@ const server = createServer((_, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const url = "http://127.0.0.1:" + server.address().port;
 const port = 9231;
-const child = spawn(resolve("src-tauri/target/debug/study-tool.exe"), [], {
+const child = spawn(resolve("src-tauri/target/debug/gradia.exe"), [], {
   env: {
     ...process.env,
     STUDY_TOOL_TEST_DATA_DIR: resolve(root, "data"),
