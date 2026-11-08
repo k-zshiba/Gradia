@@ -1,0 +1,62 @@
+name: Release Windows
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+concurrency:
+  group: gradia-releases
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Require a commit on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Release tags must point to a commit on main' }
+      - run: npm ci
+      - name: Validate tag, versions and release notes
+        run: node scripts/verify-release.mjs
+      - run: npm audit --audit-level=high
+      - run: npm test
+      - run: npx playwright install chromium --only-shell
+      - run: npm run test:e2e
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - name: Prepare verified Windows bundler tools
+        run: ./scripts/prepare-bundler.ps1
+      - name: Build signed Windows installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw 'TAURI_SIGNING_PRIVATE_KEY secret is required' }
+          npm run package
+      - name: Assemble updater manifest and checksums
+        run: node scripts/make-release.mjs
+      - name: Publish all assets together
+        run: node scripts/publish-release.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-windows-${{ github.ref_name }}
+          path: |
+            .tools/release/
+            test-results/

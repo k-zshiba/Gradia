@@ -1,5 +1,9 @@
 name: Windows checks
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -15,13 +19,19 @@ jobs:
         with:
           components: rustfmt
       - run: npm ci
+      - run: npm run release:check
+      - run: npm audit --audit-level=high
       - run: npm run build
       - run: npm test
-      - run: npx playwright install chromium
+      - run: npx playwright install chromium --only-shell
       - run: npm run test:e2e
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
-      - run: npm run package
+      - name: Prepare verified Windows bundler tools
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/prepare-bundler.ps1
+      - run: npm run package:unsigned
       - uses: actions/upload-artifact@v4
         if: always()
         with:
