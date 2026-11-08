@@ -55,6 +55,10 @@ pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<Value
 #[tauri::command]
 pub async fn list_folder(path: String) -> Result<Vec<String>> {
     tokio::task::spawn_blocking(move || {
+        let path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
+        if !path.is_dir() {
+            return Err("フォルダーを選択してください".into());
+        }
         let mut out = Vec::new();
         for entry in walkdir::WalkDir::new(path)
             .follow_links(false)
@@ -94,6 +98,50 @@ pub async fn list_folder(path: String) -> Result<Vec<String>> {
     .await
     .map_err(|e| e.to_string())?
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn folder_import_finds_nested_materials_but_excludes_dependencies_and_binary_assets() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["nested", "node_modules", ".git", "target", ".tools"] {
+            std::fs::create_dir(dir.path().join(name)).unwrap();
+        }
+        for name in [
+            "book.pdf",
+            "nested/code.rs",
+            "nested/notes.md",
+            "image.png",
+            "node_modules/index.js",
+            ".git/config.txt",
+            "target/build.rs",
+            ".tools/setup.txt",
+        ] {
+            std::fs::write(dir.path().join(name), "Original text").unwrap();
+        }
+        let paths = list_folder(dir.path().to_string_lossy().to_string())
+            .await
+            .unwrap();
+        let names: Vec<_> = paths
+            .iter()
+            .map(|p| {
+                std::path::Path::new(p)
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(names, ["book.pdf", "code.rs", "notes.md"]);
+        assert!(
+            list_folder(dir.path().join("book.pdf").to_string_lossy().to_string())
+                .await
+                .is_err()
+        );
+    }
+}
 pub fn http_url(input: &str) -> Result<url::Url> {
     let url = url::Url::parse(input).map_err(|_| "URLが正しくありません".to_string())?;
     if !["https", "http"].contains(&url.scheme())
@@ -109,7 +157,11 @@ pub async fn fetch_page(url: String) -> Result<Value> {
     crate::web::fetch_public_page(&url).await
 }
 #[tauri::command]
-pub async fn save_document(mut document: Document, state: State<'_, AppState>) -> Result<Document> {
+pub async fn save_document(
+    mut document: Document,
+    project_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Document> {
     if document.segments.len() > 100_000 {
         return Err("文の数が多すぎます".into());
     }
@@ -134,7 +186,7 @@ pub async fn save_document(mut document: Document, state: State<'_, AppState>) -
             .ok_or("ファイルを再選択してください")?
     };
     document.created_at = now();
-    state.store.put_document(&document)?;
+    state.store.put_document(&document, project_id.as_deref())?;
     state.store.document(&document.id, &document.revision)
 }
 #[tauri::command]

@@ -34,7 +34,9 @@ import {
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, desktop } from "./api";
 import { chosenSegments, selectReferences, sourceLabel } from "./core";
-import { importFile, extractWeb } from "./importers";
+import { extractWeb } from "./importers";
+import { importLocalFiles, type ImportResult } from "./library";
+import { ProjectControls } from "./ProjectControls";
 import {
   CodeViewer,
   InlineText,
@@ -50,6 +52,7 @@ import type {
   Translation,
   ChatMessage,
   JobEvent,
+  Project,
 } from "./types";
 
 const defaults: Settings = {
@@ -71,6 +74,16 @@ const TypeIcon = ({ kind }: { kind: string }) =>
 
 export default function App() {
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectId, setProjectId] = useState("");
+  const project = projects.find((p) => p.id === projectId);
+  const projectDocuments = documents.filter(
+    (d) => !project || project.documentKeys.includes(key(d)),
+  );
+  const [manageDocuments, setManageDocuments] = useState(false);
+  const [membershipBusy, setMembershipBusy] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const importAbort = useRef<AbortController | null>(null);
   const [activeKey, setActiveKey] = useState("");
   const doc = documents.find((d) => key(d) === activeKey);
   const [settings, setSettings] = useState<Settings>(defaults);
@@ -79,13 +92,6 @@ export default function App() {
   const [busy, setBusy] = useState("");
   const [urlDialog, setUrlDialog] = useState(false);
   const [url, setUrl] = useState("");
-  const [folderFiles, setFolderFiles] = useState<string[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("study-folders") || "[]");
-    } catch {
-      return [];
-    }
-  });
   const [filter, setFilter] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
@@ -206,17 +212,26 @@ export default function App() {
         else fn();
       });
     if (desktop) {
-      void Promise.all([api.list(), api.settings()])
-        .then(([docs, s]) => {
+      void Promise.all([api.list(), api.settings(), api.projects()])
+        .then(([docs, s, availableProjects]) => {
           if (!alive) return;
           setDocuments(docs);
           setSettings(s);
-          const saved = localStorage.getItem("study-active");
+          setProjects(availableProjects);
+          const savedProject = localStorage.getItem("study-project") || "";
+          const restored = availableProjects.find((p) => p.id === savedProject);
+          setProjectId(restored?.id || "");
+          const available = restored
+            ? docs.filter((d) => restored.documentKeys.includes(key(d)))
+            : docs;
+          const saved = restored
+            ? localStorage.getItem(`study-active:${restored.id}`)
+            : localStorage.getItem("study-active");
           setActiveKey(
-            docs.some((d) => key(d) === saved)
+            available.some((d) => key(d) === saved)
               ? saved!
-              : docs[0]
-                ? key(docs[0])
+              : available[0]
+                ? key(available[0])
                 : "",
           );
         })
@@ -260,6 +275,7 @@ export default function App() {
       return;
     }
     localStorage.setItem("study-active", target);
+    if (projectId) localStorage.setItem(`study-active:${projectId}`, target);
     void Promise.all([
       api.translations(doc.id, doc.revision),
       api.history(doc.id, doc.revision),
@@ -439,29 +455,63 @@ export default function App() {
       list.map((d) => (key(d) === activeKey ? { ...d, ratio } : d)),
     );
   }
-  async function addFile(path: string) {
-    setBusy("資料を読み込んでいます…");
+  function selectProject(id: string, availableProjects = projects) {
+    const next = availableProjects.find((p) => p.id === id);
+    const available = next
+      ? documents.filter((d) => next.documentKeys.includes(key(d)))
+      : documents;
+    const saved = localStorage.getItem(
+      id ? `study-active:${id}` : "study-active",
+    );
+    setProjectId(id);
+    localStorage.setItem("study-project", id);
+    const active = available.some((d) => key(d) === saved)
+      ? saved!
+      : available[0]
+        ? key(available[0])
+        : "";
+    setActiveKey(active);
+    if (id && active) localStorage.setItem(`study-active:${id}`, active);
+    setFilter("");
+  }
+  async function addFiles(paths: string[]) {
+    if (!paths.length) {
+      setToast("このフォルダーには対応するファイルがありません");
+      return;
+    }
+    const controller = new AbortController();
+    importAbort.current = controller;
+    setImportResult(null);
+    setBusy("資料を取り込んでいます…");
     try {
-      const file = await api.read(path);
-      const imported = await importFile(file, (p, total) =>
-        setBusy(`PDFを解析しています ${p} / ${total}`),
+      const result = await importLocalFiles(
+        paths,
+        projectId || null,
+        setBusy,
+        controller.signal,
       );
-      const saved = await api.save(imported);
+      const addedKeys = new Set(result.documents.map(key));
       setDocuments((list) => [
-        saved,
-        ...list.filter((d) => key(d) !== key(saved)),
+        ...result.documents,
+        ...list.filter((d) => !addedKeys.has(key(d))),
       ]);
-      setActiveKey(key(saved));
+      if (result.documents[0]) setActiveKey(key(result.documents[0]));
+      setImportResult(result);
+      setProjects(await api.projects());
     } catch (e) {
       error(e);
     } finally {
+      importAbort.current = null;
       setBusy("");
     }
   }
   async function selectFile() {
     try {
-      const path = await open({ multiple: false });
-      if (typeof path === "string") await addFile(path);
+      const paths = await open({
+        multiple: true,
+        title: "資料を追加（複数選択できます）",
+      });
+      if (paths) await addFiles(typeof paths === "string" ? [paths] : paths);
     } catch (e) {
       error(e);
     }
@@ -472,8 +522,7 @@ export default function App() {
       if (typeof path === "string") {
         setBusy("フォルダーを読み込んでいます…");
         const files = await api.folder(path);
-        setFolderFiles(files);
-        localStorage.setItem("study-folders", JSON.stringify(files));
+        await addFiles(files);
       }
     } catch (e) {
       error(e);
@@ -486,19 +535,23 @@ export default function App() {
     try {
       const result = await api.fetch(target);
       const article = extractWeb(result.html, result.url);
-      const saved = await api.save({
-        ...article,
-        kind: "web",
-        source: result.url,
-        content: "",
-        ratio: 0,
-        position: null,
-      });
+      const saved = await api.save(
+        {
+          ...article,
+          kind: "web",
+          source: result.url,
+          content: "",
+          ratio: 0,
+          position: null,
+        },
+        projectId || null,
+      );
       setDocuments((list) => [
         saved,
         ...list.filter((d) => key(d) !== key(saved)),
       ]);
       setActiveKey(key(saved));
+      setProjects(await api.projects());
       setUrlDialog(false);
       setUrl("");
     } catch (e) {
@@ -508,6 +561,8 @@ export default function App() {
     }
   }
   function sample() {
+    setProjectId("");
+    localStorage.setItem("study-project", "");
     setDocuments((list) => [
       previewDocument,
       ...list.filter((d) => d.id !== "sample"),
@@ -593,16 +648,39 @@ export default function App() {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", done);
   }
-  const groupedFiles = useMemo(() => {
-    const groups = new Map<string, string[]>();
-    for (const file of folderFiles.filter((f) =>
-      f.toLowerCase().includes(filter.toLowerCase()),
-    )) {
-      const dir = file.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
-      groups.set(dir, [...(groups.get(dir) || []), file]);
-    }
-    return [...groups];
-  }, [folderFiles, filter]);
+  const filteredDocuments = projectDocuments.filter((d) =>
+    `${d.title} ${d.source}`.toLowerCase().includes(filter.toLowerCase()),
+  );
+  const groupedFiles = new Map<string, Document[]>();
+  const otherDocuments: Document[] = [];
+  for (const d of filteredDocuments) {
+    const dir = d.source.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
+    if (d.kind === "web" || d.id === "sample" || !dir) otherDocuments.push(d);
+    else groupedFiles.set(dir, [...(groupedFiles.get(dir) || []), d]);
+  }
+  function documentItem(d: Document) {
+    return (
+      <button
+        className={`document-item ${key(d) === activeKey ? "active" : ""}`}
+        key={key(d)}
+        title={d.source}
+        onClick={() => setActiveKey(key(d))}
+      >
+        <span className={`type-icon ${d.kind}`}>
+          <TypeIcon kind={d.kind} />
+        </span>
+        <span>
+          <strong>{d.title}</strong>
+          <small>
+            {d.id === "sample"
+              ? "操作サンプル"
+              : `${d.kind.toUpperCase()} · ${new Date(d.createdAt).toLocaleDateString("ja-JP")}`}
+            {d.ratio > 0 && ` · 日本語 ${d.ratio}%`}
+          </small>
+        </span>
+      </button>
+    );
+  }
 
   return (
     <div className="app">
@@ -662,7 +740,7 @@ export default function App() {
             {!leftClosed && (
               <>
                 <span>ライブラリー</span>
-                <small>{documents.length}</small>
+                <small>{projectDocuments.length}</small>
               </>
             )}
             <button
@@ -675,6 +753,30 @@ export default function App() {
           </div>
           {!leftClosed && (
             <>
+              <ProjectControls
+                projects={projects}
+                active={projectId}
+                disabled={!desktop || !!busy}
+                onSelect={selectProject}
+                onError={error}
+                onCreate={async (name) => {
+                  const created = await api.createProject(name);
+                  const next = [...projects, created];
+                  setProjects(next);
+                  selectProject(created.id, next);
+                }}
+                onRename={async (id, name) => {
+                  await api.renameProject(id, name);
+                  setProjects((list) =>
+                    list.map((p) => (p.id === id ? { ...p, name } : p)),
+                  );
+                }}
+                onDelete={async (id) => {
+                  await api.deleteProject(id);
+                  setProjects((list) => list.filter((p) => p.id !== id));
+                  selectProject("");
+                }}
+              />
               <div className="add-actions">
                 <button
                   className="primary"
@@ -697,10 +799,20 @@ export default function App() {
                   disabled={!desktop || !!busy}
                   onClick={() => void selectFolder()}
                   aria-label="フォルダーを追加"
+                  title="フォルダー内の対応ファイルをまとめて追加"
                 >
                   <FolderOpen size={17} />
                 </button>
               </div>
+              {project && (
+                <button
+                  className="project-members text-button"
+                  disabled={!!busy}
+                  onClick={() => setManageDocuments(true)}
+                >
+                  既存の資料を選ぶ・外す
+                </button>
+              )}
               <label className="library-search">
                 <Search size={15} />
                 <input
@@ -711,58 +823,22 @@ export default function App() {
                 />
               </label>
               <div className="library-scroll">
-                <p className="section-label">MY READING</p>
-                {documents
-                  .filter((d) =>
-                    d.title.toLowerCase().includes(filter.toLowerCase()),
-                  )
-                  .map((d) => (
-                    <button
-                      className={`document-item ${key(d) === activeKey ? "active" : ""}`}
-                      key={key(d)}
-                      onClick={() => setActiveKey(key(d))}
-                    >
-                      <span className={`type-icon ${d.kind}`}>
-                        <TypeIcon kind={d.kind} />
-                      </span>
-                      <span>
-                        <strong>{d.title}</strong>
-                        <small>
-                          {d.id === "sample"
-                            ? "操作サンプル"
-                            : `${d.kind.toUpperCase()} · ${new Date(d.createdAt).toLocaleDateString("ja-JP")}`}{" "}
-                          {d.ratio > 0 && ` · 日本語 ${d.ratio}%`}
-                        </small>
-                      </span>
-                    </button>
-                  ))}
-                {!documents.length && (
+                <p className="section-label">{project?.name || "MY READING"}</p>
+                {otherDocuments.map(documentItem)}
+                {!projectDocuments.length && (
                   <p className="empty-library">
                     読みたい資料を、
                     <br />
                     ここに集めましょう。
                   </p>
                 )}
-                {groupedFiles.length > 0 && (
-                  <p className="section-label">SOURCE FOLDERS</p>
-                )}
-                {groupedFiles.map(([dir, files]) => (
-                  <details className="folder" key={dir}>
+                {[...groupedFiles].map(([dir, files]) => (
+                  <details className="folder" key={dir} open>
                     <summary title={dir}>
                       <FolderOpen size={14} />
                       {dir.split("/").pop()} <small>{files.length}</small>
                     </summary>
-                    {files.map((f) => (
-                      <button
-                        title={f}
-                        key={f}
-                        disabled={!!busy}
-                        onClick={() => void addFile(f)}
-                      >
-                        <Code2 size={13} />
-                        {f.replace(/\\/g, "/").split("/").pop()}
-                      </button>
-                    ))}
+                    {files.map(documentItem)}
                   </details>
                 ))}
               </div>
@@ -830,7 +906,7 @@ export default function App() {
               <div className="document-toolbar">
                 <span className="breadcrumb">
                   <TypeIcon kind={doc.kind} />
-                  ライブラリー <span>/</span> {doc.title}
+                  {project?.name || "ライブラリー"} <span>/</span> {doc.title}
                 </span>
                 <div className="toolbar-actions">
                   {doc.kind === "web" && (
@@ -1333,6 +1409,132 @@ export default function App() {
         <div className="busy-indicator" role="status">
           <LoaderCircle className="spin" size={17} />
           {busy}
+          {importAbort.current && (
+            <button
+              className="text-button"
+              disabled={importAbort.current.signal.aborted}
+              onClick={() => {
+                importAbort.current?.abort();
+                setBusy("現在のファイルを保存して取り込みを中断します…");
+              }}
+            >
+              取り込みを中断
+            </button>
+          )}
+        </div>
+      )}
+      {manageDocuments && project && (
+        <div className="modal-backdrop">
+          <section
+            className="modal url-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="プロジェクトの資料"
+          >
+            <header>
+              <h2>プロジェクトの資料</h2>
+              <button
+                className="icon"
+                aria-label="閉じる"
+                disabled={membershipBusy}
+                onClick={() => setManageDocuments(false)}
+              >
+                <X size={20} />
+              </button>
+            </header>
+            <div className="project-document-list">
+              <p>
+                「{project.name}
+                」に表示する資料を選びます。外した資料は「すべての資料」に残ります。
+              </p>
+              {documents
+                .filter((d) => d.id !== "sample")
+                .map((d) => (
+                  <label key={key(d)} title={d.source}>
+                    <input
+                      type="checkbox"
+                      checked={project.documentKeys.includes(key(d))}
+                      disabled={membershipBusy}
+                      onChange={(e) => {
+                        const add = e.target.checked;
+                        setMembershipBusy(true);
+                        void api
+                          .projectDocument(project.id, d.id, d.revision, add)
+                          .then(() => {
+                            const next = projects.map((p) =>
+                              p.id !== project.id
+                                ? p
+                                : {
+                                    ...p,
+                                    documentKeys: add
+                                      ? [...p.documentKeys, key(d)]
+                                      : p.documentKeys.filter(
+                                          (k) => k !== key(d),
+                                        ),
+                                  },
+                            );
+                            setProjects(next);
+                            if (!add && activeKey === key(d))
+                              selectProject(project.id, next);
+                          })
+                          .catch(error)
+                          .finally(() => setMembershipBusy(false));
+                      }}
+                    />
+                    <span>
+                      <strong>{d.title}</strong>
+                      <small>
+                        {d.source} ·{" "}
+                        {new Date(d.createdAt).toLocaleDateString("ja-JP")}
+                      </small>
+                    </span>
+                  </label>
+                ))}
+              {!documents.some((d) => d.id !== "sample") && (
+                <p>資料を追加すると、ここで選べます。</p>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+      {importResult && (
+        <div className="modal-backdrop">
+          <section
+            className="modal url-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="取り込み結果"
+          >
+            <header>
+              <h2>取り込み結果</h2>
+              <button
+                className="icon"
+                aria-label="閉じる"
+                onClick={() => setImportResult(null)}
+              >
+                <X size={20} />
+              </button>
+            </header>
+            <div className="project-document-list">
+              <p>
+                {importResult.documents.length}件を追加しました。
+                {importResult.failures.length > 0 &&
+                  `${importResult.failures.length}件を読み込めませんでした。`}
+              </p>
+              {importResult.cancelled && (
+                <p>取り込みを中断しました。完了した資料は保存されています。</p>
+              )}
+              {importResult.failures.map((f) => (
+                <div className="import-failure" key={f.path}>
+                  <strong>{f.path}</strong>
+                  <p>{f.error}</p>
+                </div>
+              ))}
+              <button className="primary" onClick={() => setImportResult(null)}>
+                資料を読む
+              </button>
+            </div>
+          </section>
         </div>
       )}
       {toast && (

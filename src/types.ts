@@ -30,6 +30,11 @@ export interface Document {
   ratio: number;
   position: string | null;
 }
+export interface Project {
+  id: string;
+  name: string;
+  documentKeys: string[];
+}
 export interface Translation {
   segmentId: string;
   text: string;
