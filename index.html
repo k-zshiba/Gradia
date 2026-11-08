@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Study Tool — 読む、理解する。</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f5f5ef;
+        color: #315c46;
+        font-family: "Segoe UI", Meiryo, sans-serif;
+      }
+      .boot-guide {
+        max-width: 640px;
+        margin: 12vh auto;
+        padding: 36px;
+        line-height: 1.9;
+        background: #fffefa;
+        border: 1px solid #dfe5d8;
+        border-radius: 16px;
+      }
+      .boot-guide h1 {
+        font-size: 28px;
+        margin-top: 0;
+      }
+      .boot-guide a {
+        color: #315c46;
+      }
+      .boot-guide code {
+        background: #edf1e5;
+        padding: 3px 6px;
+        border-radius: 4px;
+      }
+      .boot-guide small {
+        color: #77836e;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <main class="boot-guide">
+        <h1>Study Tool の起動</h1>
+        <p>アプリ画面を読み込んでいます。</p>
+        <p>
+          この案内が残る場合、<strong
+            >index.html を直接開いてもアプリは起動しません。</strong
+          >同じフォルダーの
+          <code>Start-Study-Tool.cmd</code>、またはスタートメニューの
+          <strong>Study Tool</strong> からWindowsアプリを起動してください。
+        </p>
+        <p>
+          画面プレビューだけを使う場合は
+          <code>Start-Preview.cmd</code> を起動し、
+          <a href="http://127.0.0.1:1420">Study Tool の画面を開く</a>
+          からアクセスできます。
+        </p>
+        <p>
+          <small
+            >ブラウザー画面は操作プレビューです。資料保存とローカル翻訳はWindows版で利用できます。Codexへの質問には設定からChatGPTへの接続が必要です。</small
+          >
+        </p>
+      </main>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
