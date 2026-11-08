@@ -6,17 +6,25 @@
 
 ```powershell
 git fetch origin
-git switch -c codex/add-projects origin/main
+git switch -c feature/add-projects origin/main
 ```
 
-ブランチ名は`codex/変更の目的`とします。1つのPRは、まとめて確認・取り消しできる範囲に絞ります。並行する別の変更は、作業中のブランチではなく`origin/main`から分けます。依存する変更を同じPRに含める場合は、その関係をPR本文に記載します。
+ブランチ名は変更の種類で分けます。目的は短い英語のハイフン区切りで表します。
+
+| 用途 | 形式 | 例 |
+| --- | --- | --- |
+| 機能追加・改善・文書整備 | `feature/<目的>` | `feature/add-projects` |
+| 不具合・セキュリティ修正 | `fix/<目的>` | `fix/restore-reading-position` |
+| リリース準備 | `release/vX.Y.Z` | `release/v0.3.0` |
+
+1つのPRは、まとめて確認・取り消しできる範囲に絞ります。並行する別の変更は、作業中のブランチではなく`origin/main`から分けます。依存する変更を同じPRに含める場合は、その関係をPR本文に記載します。
 
 ```mermaid
 flowchart LR
-  M[main] --> F[codex/機能・修正]
+  M[main] --> F["feature/目的 または fix/目的"]
   F --> P[PR・検証・確認]
   P --> M2[mainへ取り込み]
-  M2 --> R[codex/release-vX.Y.Z]
+  M2 --> R[release/vX.Y.Z]
   R --> RP[バージョン・変更履歴のPR]
   RP --> M3[mainへ取り込み・検証]
   M3 --> T[vX.Y.Zタグ]
@@ -36,6 +44,6 @@ flowchart LR
 
 ## リリースと緊急修正
 
-リリース準備も`main`から分けたブランチとPRを使います。タグはPRを取り込んだ`main`上のコミットに付け、常設のリリースブランチは設けません。具体的な手順、RC、将来の保守ブランチは[リリース規約](releasing.md)に記載します。
+リリース準備は`main`から`release/vX.Y.Z`を分けてPRを作ります。タグはPRを取り込んだ`main`上のコミットに付け、準備ブランチは取り込み後に削除します。具体的な手順とRCの扱いは[リリース規約](releasing.md)に記載します。
 
-緊急修正も最新の`origin/main`から`codex/fix-問題`を作り、PRと検証を省略しません。取り込み後にPATCH版を準備します。`main`に未公開の機能がある場合は、その機能を含む版として公開可能か確認し、公開できない変更はPRでrevertしてから修正版を準備します。配布済みタグやバイナリの上書きは行いません。
+緊急修正も最新の`origin/main`から`fix/<目的>`を作り、PRと検証を省略しません。取り込み後にPATCH版を準備します。`main`に未公開の機能がある場合は、その機能を含む版として公開可能か確認し、公開できない変更はPRでrevertしてから修正版を準備します。配布済みタグやバイナリの上書きは行いません。
