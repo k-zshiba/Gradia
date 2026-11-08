@@ -10,6 +10,10 @@ import {
   createReleaseArtifacts,
 } from "../scripts/release-lib.mjs";
 const dirs = [];
+const signatureFor = (version) =>
+  Buffer.from(
+    `untrusted comment: fixture\nfixture-signature\ntrusted comment: timestamp:0\tfile:fixture${version ? `\tversion:${version}` : ""}\nfixture-comment-signature\n`,
+  ).toString("base64");
 afterEach(async () => {
   for (const dir of dirs.splice(0))
     await rm(dir, { recursive: true, force: true });
@@ -27,7 +31,9 @@ async function fixture() {
     "src-tauri/tauri.conf.json": {
       version: "0.2.0",
       bundle: { createUpdaterArtifacts: true },
-      plugins: { updater: { pubkey: "test-public-key" } },
+      plugins: {
+        updater: { pubkey: "test-public-key", requireSignedVersion: true },
+      },
     },
   };
   for (const [file, value] of Object.entries(files))
@@ -72,10 +78,27 @@ describe("release policy", () => {
     await writeFile(resolve(root, "src-tauri/Cargo.toml"), 'version = "0.1.0"');
     await expect(validateRelease("v0.2.0", root)).rejects.toThrow("Cargo.toml");
   });
-  it("rejects releases without notes or updater signing enabled", async () => {
+  it("rejects releases without notes", async () => {
     const root = await fixture();
     await writeFile(resolve(root, "CHANGELOG.md"), "# No notes");
     await expect(validateRelease("v0.2.0", root)).rejects.toThrow("CHANGELOG");
+  });
+  it("refuses release settings that disable artifact signing or signed-version verification", async () => {
+    const root = await fixture();
+    const path = resolve(root, "src-tauri/tauri.conf.json");
+    const config = JSON.parse(await readFile(path, "utf8"));
+    await writeFile(
+      path,
+      JSON.stringify({ ...config, bundle: { createUpdaterArtifacts: false } }),
+    );
+    await expect(validateRelease("v0.2.0", root)).rejects.toThrow(
+      "Signed updater",
+    );
+    config.plugins.updater.requireSignedVersion = false;
+    await writeFile(path, JSON.stringify(config));
+    await expect(validateRelease("v0.2.0", root)).rejects.toThrow(
+      "signed-version",
+    );
   });
   it("creates a Windows-only manifest with signature and matching checksums", async () => {
     const root = await fixture(),
@@ -88,7 +111,7 @@ describe("release policy", () => {
     );
     await writeFile(
       resolve(source, "Gradia_0.2.0_x64-setup.exe.sig"),
-      "c2lnbmF0dXJl\n",
+      signatureFor("0.2.0") + "\n",
     );
     const result = await createReleaseArtifacts({
       root,
@@ -101,7 +124,7 @@ describe("release policy", () => {
       "https://github.com/k-zshiba/Gradia/releases/download/v0.2.0/Gradia_0.2.0_x64-setup.exe",
     );
     expect(result.manifest.platforms["windows-x86_64"].signature).toBe(
-      "c2lnbmF0dXJl",
+      signatureFor("0.2.0"),
     );
     expect(result.manifest.notes).toBe("- New updates.");
     expect(
@@ -109,9 +132,32 @@ describe("release policy", () => {
         .trim()
         .split("\n"),
     ).toHaveLength(3);
+    expect(
+      await readFile(resolve(destination, "SHA256SUMS"), "utf8"),
+    ).toContain(
+      "b0df7c1e2a37a38ac24f4c6383a941804f959006e941a08ed914b48addf4dd84  Gradia_0.2.0_x64-setup.exe",
+    );
     await rm(resolve(source, "Gradia_0.2.0_x64-setup.exe.sig"));
     await expect(
       createReleaseArtifacts({ root, tag: "v0.2.0", source, destination }),
     ).rejects.toThrow();
+  });
+  it("refuses signatures without a version or bound to a different release", async () => {
+    const root = await fixture(),
+      source = resolve(root, "installers");
+    await mkdir(source);
+    await writeFile(
+      resolve(source, "Gradia_0.2.0_x64-setup.exe"),
+      "MZtest-installer",
+    );
+    for (const version of [undefined, "0.1.0"]) {
+      await writeFile(
+        resolve(source, "Gradia_0.2.0_x64-setup.exe.sig"),
+        signatureFor(version),
+      );
+      await expect(
+        createReleaseArtifacts({ root, tag: "v0.2.0", source }),
+      ).rejects.toThrow("bound to the release version");
+    }
   });
 });

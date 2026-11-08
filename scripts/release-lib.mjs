@@ -64,9 +64,12 @@ export async function validateRelease(tag, root = process.cwd()) {
   );
   if (
     !config.bundle?.createUpdaterArtifacts ||
-    !config.plugins?.updater?.pubkey
+    !config.plugins?.updater?.pubkey ||
+    config.plugins?.updater?.requireSignedVersion !== true
   )
-    throw new Error("Signed updater artifacts must be enabled");
+    throw new Error(
+      "Signed updater artifacts and signed-version verification must be enabled",
+    );
   await releaseNotes(release.version, root);
   return release;
 }
@@ -106,6 +109,16 @@ export async function createReleaseArtifacts({
   ).trim();
   if (!signature || !/^[A-Za-z0-9+/=]+$/.test(signature))
     throw new Error("Missing or invalid update signature");
+  const comment = Buffer.from(signature, "base64")
+    .toString("utf8")
+    .split(/\r?\n/)
+    .find((line) => line.startsWith("trusted comment: "));
+  const signedVersion = comment
+    ?.split("\t")
+    .find((field) => field.startsWith("version:"))
+    ?.slice(8);
+  if (signedVersion !== release.version)
+    throw new Error("Update signature must be bound to the release version");
   const notes = await releaseNotes(release.version, root);
   const platform = {
     signature,
