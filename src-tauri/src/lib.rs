@@ -54,14 +54,45 @@ fn list_documents(state: State<'_, AppState>) -> Result<Vec<Document>> {
     state.store.list()
 }
 #[tauri::command]
+fn list_projects(state: State<'_, AppState>) -> Result<Vec<Project>> {
+    state.store.projects()
+}
+#[tauri::command]
+fn create_project(name: String, state: State<'_, AppState>) -> Result<Project> {
+    state.store.create_project(&name)
+}
+#[tauri::command]
+fn rename_project(id: String, name: String, state: State<'_, AppState>) -> Result<()> {
+    state.store.rename_project(&id, &name)
+}
+#[tauri::command]
+fn delete_project(id: String, state: State<'_, AppState>) -> Result<()> {
+    state.store.delete_project(&id)
+}
+#[tauri::command]
+fn set_project_document(
+    project_id: String,
+    id: String,
+    revision: String,
+    add: bool,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    state
+        .store
+        .project_document(&project_id, &id, &revision, add)
+}
+#[tauri::command]
 fn save_preference(
     id: String,
     revision: String,
     ratio: u8,
     position: Option<String>,
+    bilingual: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<()> {
-    state.store.preference(&id, &revision, ratio, position)
+    state
+        .store
+        .preference(&id, &revision, ratio, position, bilingual.unwrap_or(false))
 }
 #[tauri::command]
 fn get_translations(id: String, revision: String, state: State<'_, AppState>) -> Result<Value> {
@@ -164,6 +195,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             list_documents,
+            list_projects,
+            create_project,
+            rename_project,
+            delete_project,
+            set_project_document,
             files::read_file,
             files::list_folder,
             files::fetch_page,

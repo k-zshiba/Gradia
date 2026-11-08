@@ -1,5 +1,7 @@
 # 開発手順
 
+変更は最新の`origin/main`から作業ブランチを作り、PRで取り込みます。ブランチ名、取り込み方法、リリース準備は[ブランチ運用](branching.md)を参照してください。
+
 ## 必要な環境
 
 - Windows 11 x64 / WebView2 Runtime
@@ -40,6 +42,7 @@ cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets
 - `scripts/probe-translation.mjs`: `.tools/llama/`と`.tools/models/`を利用する実翻訳プローブ。
 - `scripts/probe-native.mjs`: 起動済みのViteとdebug版`gradia.exe`を使用し、専用保存先で翻訳・保存・再起動を確認。
 - `scripts/probe-materials.mjs`: 専用保存先でPDF原本・Monaco・Web抽出・中断を確認。
+- `scripts/probe-projects.mjs`: debug版を専用保存先で起動し、複数ファイル・フォルダー取り込み、個別失敗、プロジェクト共有・変更・削除・再起動復元を確認。ファイル選択ダイアログの戻り値だけを置き換え、実際の読み込み・抽出・SQLite保存を通します。
 - 上記プローブでは、翻訳サーバーが認証なしの要求を拒否することと、プライベートWeb取得を拒否することも確認します。
 - `scripts/probe-codex.mjs`: ローカル模擬サーバーとのプロトコル確認。OpenAIへの推論要求は行わない。
 - `scripts/probe-live-chat.mjs`: 接続済みインストール版のWebView2デバッグポート9224で、本人の契約枠による実回答を確認。開発者が明示的に実行する。

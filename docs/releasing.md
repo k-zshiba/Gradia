@@ -10,18 +10,33 @@
 
 ## リリース前の操作
 
-1. `main`で検証を実行し、成功を確認します。
-2. `npm run release:version -- 0.2.0`で全マニフェストとロックファイルを揃えます。
-3. `CHANGELOG.md`に同じバージョンの変更内容を記入します。重大な変更・移行手順も含めます。
-4. `npm run release:check -- v0.2.0`と開発手順のテストを実行します。
-5. 変更をコミットして`main`へpushしてから、タグを作成します。
+1. 対象の機能・修正PRを`main`へ取り込み、Windows checksの成功を確認します。
+2. 最新の`origin/main`から`release/v0.3.0`のようなリリース準備ブランチを作ります。
+3. `npm run release:version -- 0.3.0`で全マニフェストとロックファイルを揃えます。
+4. `CHANGELOG.md`の`Unreleased`から今回の変更を`0.3.0`へ移し、空の`Unreleased`を残します。重大な変更・移行手順も含めます。
+5. `npm run release:check -- v0.3.0`と開発手順のテストを実行し、バージョン・変更履歴を更新するPRを作成します。
+6. PRの検証と確認が済んだら`main`へ取り込み、取り込まれたコミットのWindows checksが成功したことを確認します。
+7. そのコミットにタグを付けてpushします。作業ブランチ上のコミットにはタグを付けません。
 
 ```powershell
-git tag -a v0.2.0 -m "Gradia 0.2.0"
-git push origin v0.2.0
+git fetch origin
+git switch main
+git pull --ff-only origin main
+git tag -a v0.3.0 -m "Gradia 0.3.0"
+git push origin v0.3.0
 ```
 
+この例では、手順6で確認したコミットが現在の`origin/main`の先頭であることを確認してから実行します。後続のPRが取り込まれている場合は、リリースPRが取り込まれたコミットを明示してタグを付けます。
+
 `package.json`、`package-lock.json`のトップレベルとルートパッケージ、`Cargo.toml`、`Cargo.lock`、`tauri.conf.json`のバージョンがタグと異なる場合は公開しません。タグは`main`の履歴上のコミットに限ります。
+
+## リリース用ブランチ
+
+現在は最新の安定版だけを保守し、常設の`develop`・`release`ブランチは作りません。リリース準備ブランチも通常の作業ブランチと同様、PRを取り込んだら削除します。配布元は検証済みの`main`上のタグです。通常の開発手順は[ブランチ運用](branching.md)に記載します。
+
+RCもリリース準備PRを`main`へ取り込んでから`v0.3.0-rc.1`を付けます。準備ブランチ名には公開予定の安定版番号を使い、例えば`release/v0.3.0`とします。取り込み後は削除し、次のRCや安定版の準備時は最新の`origin/main`から作り直します。RC中の修正は`fix/<目的>`から`main`へPRします。RCの確認中は、対象外の新機能を`main`へ取り込まず、`feature/<目的>`で保持します。
+
+複数の安定版の同時保守は現在の運用には含めません。必要になった場合は、保守元のブランチ・公開元の検査・CI・更新配信先を別途設計します。現行の公開処理は`main`上のタグだけを許可します。
 
 ## 自動処理
 

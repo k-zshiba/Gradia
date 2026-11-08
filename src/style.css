@@ -19,6 +19,7 @@ body {
 }
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -50,6 +51,7 @@ a:focus-visible {
   outline-offset: 3px;
 }
 input,
+select,
 textarea {
   outline: none;
   border: 1px solid var(--line);
@@ -219,6 +221,60 @@ small {
   gap: 6px;
   padding: 0 17px 17px;
 }
+.project-controls {
+  margin: 0 17px 16px;
+}
+.project-controls > label {
+  display: block;
+  font-size: 10px;
+  color: #6f7c6b;
+  margin-bottom: 7px;
+}
+.project-picker-row {
+  display: flex;
+  gap: 4px;
+}
+.project-picker-row select {
+  min-width: 0;
+  width: 100%;
+  padding: 7px 4px;
+  font-size: 11px;
+}
+.project-members {
+  margin: -7px 17px 12px;
+  align-self: flex-start;
+}
+.project-document-list {
+  padding: 22px 28px;
+  max-height: 65vh;
+  overflow: auto;
+}
+.project-document-list > label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.project-document-list > label > span {
+  min-width: 0;
+}
+.project-document-list strong,
+.project-document-list small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.project-document-list small {
+  color: #839087;
+  margin-top: 4px;
+}
+.project-delete-confirm {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+}
+.import-failure {
+  margin-bottom: 15px;
+}
 .add-actions .primary {
   flex: 1;
   font-size: 12px;
@@ -338,11 +394,9 @@ small {
 .folder summary small {
   margin-left: auto;
 }
-.folder button {
+.folder .document-item {
   display: flex;
-  background: transparent;
-  border: 0;
-  padding: 7px 0 7px 16px;
+  padding: 8px 4px;
   max-width: 100%;
   overflow: hidden;
   white-space: nowrap;
@@ -405,6 +459,73 @@ small {
   padding: 20px 26px 15px;
   background: #fbfcf5;
   flex-shrink: 0;
+}
+.display-mode-toolbar,
+.bilingual-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 26px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  color: #68795b;
+}
+.mode-switch {
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+}
+.switch-track {
+  width: 30px;
+  height: 18px;
+  border-radius: 10px;
+  padding: 3px;
+  background: #b3beac;
+  display: inline-flex;
+  align-items: center;
+}
+.switch-track > span {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.15s;
+}
+.mode-switch[aria-checked="true"] .switch-track {
+  background: var(--green);
+}
+.mode-switch[aria-checked="true"] .switch-track > span {
+  transform: translateX(12px);
+}
+.bilingual-translation {
+  margin: 8px 0 15px;
+  padding: 8px 12px;
+  border-left: 2px solid #91a87d;
+  border-radius: 0 5px 5px 0;
+  background: #f1f5eb;
+  color: #315c46;
+  font-size: 14px;
+  line-height: 1.9;
+}
+.translation-label {
+  display: block;
+  font:
+    10px "Segoe UI",
+    "Yu Gothic UI",
+    sans-serif;
+  color: #718764;
+  margin-bottom: 4px;
+}
+.bilingual-waiting {
+  display: block;
+  color: #839087;
+  padding: 6px 0;
+}
+.segment.comment.bilingual {
+  display: block;
+}
+.segment.comment.bilingual .line-label {
+  margin-bottom: 6px;
 }
 .translation-toolbar > div {
   display: flex;

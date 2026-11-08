@@ -28,7 +28,13 @@ export interface Document {
   warnings: string[];
   language?: string;
   ratio: number;
+  bilingual?: boolean;
   position: string | null;
+}
+export interface Project {
+  id: string;
+  name: string;
+  documentKeys: string[];
 }
 export interface Translation {
   segmentId: string;

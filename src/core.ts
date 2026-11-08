@@ -1,12 +1,14 @@
 import type { Document, Segment, Reference } from "./types";
 
-export function hash(text: string): number {
-  let h = 2166136261;
-  for (const ch of text) {
-    h ^= ch.codePointAt(0)!;
-    h = Math.imul(h, 16777619);
+function translationPriority(index: number): number {
+  let priority = 0;
+  let weight = 0.5;
+  while (index > 0) {
+    priority += (index % 2) * weight;
+    index = Math.floor(index / 2);
+    weight /= 2;
   }
-  return h >>> 0;
+  return priority;
 }
 export function chosenSegments(
   segments: Segment[],
@@ -14,11 +16,17 @@ export function chosenSegments(
 ): Set<string> {
   const items = segments
     .filter((s) => s.eligible)
-    .sort((a, b) => hash(a.id) - hash(b.id) || a.id.localeCompare(b.id));
+    .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+    // Re-spacing at each ratio would turn some translated sentences back into English.
+    .map((segment, index) => ({
+      segment,
+      priority: translationPriority(index),
+    }))
+    .sort((a, b) => a.priority - b.priority);
   const count = Math.round(
     (items.length * Math.min(100, Math.max(0, ratio))) / 100,
   );
-  return new Set(items.slice(0, count).map((s) => s.id));
+  return new Set(items.slice(0, count).map(({ segment }) => segment.id));
 }
 export function isEnglish(text: string): boolean {
   const plain = text.replace(/`[^`]*`|\$[^$]*\$|https?:\/\/\S+/g, "");

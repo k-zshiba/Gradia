@@ -8,6 +8,7 @@ import type {
   Reference,
   JobEvent,
   LocalFile,
+  Project,
 } from "./types";
 export const desktop = isTauri();
 export async function call<T>(
@@ -22,8 +23,21 @@ export async function call<T>(
 }
 export const api = {
   list: () => call<Document[]>("list_documents"),
-  save: (document: Omit<Document, "id" | "revision" | "createdAt">) =>
-    call<Document>("save_document", { document }),
+  save: (
+    document: Omit<Document, "id" | "revision" | "createdAt">,
+    projectId: string | null = null,
+  ) => call<Document>("save_document", { document, projectId }),
+  projects: () => call<Project[]>("list_projects"),
+  createProject: (name: string) => call<Project>("create_project", { name }),
+  renameProject: (id: string, name: string) =>
+    call<void>("rename_project", { id, name }),
+  deleteProject: (id: string) => call<void>("delete_project", { id }),
+  projectDocument: (
+    projectId: string,
+    id: string,
+    revision: string,
+    add: boolean,
+  ) => call<void>("set_project_document", { projectId, id, revision, add }),
   read: (path: string) => call<LocalFile>("read_file", { path }),
   folder: (path: string) => call<string[]>("list_folder", { path }),
   fetch: (url: string) =>
@@ -35,7 +49,9 @@ export const api = {
     revision: string,
     ratio: number,
     position: string | null,
-  ) => call<void>("save_preference", { id, revision, ratio, position }),
+    bilingual = false,
+  ) =>
+    call<void>("save_preference", { id, revision, ratio, position, bilingual }),
   translations: (id: string, revision: string) =>
     call<Record<string, Translation>>("get_translations", { id, revision }),
   translate: (documentId: string, revision: string, segmentIds: string[]) =>

@@ -29,7 +29,16 @@ pub struct Document {
     pub warnings: Vec<String>,
     pub language: Option<String>,
     pub ratio: u8,
+    #[serde(default)]
+    pub bilingual: bool,
     pub position: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub document_keys: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
