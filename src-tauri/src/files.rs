@@ -105,40 +105,8 @@ pub fn http_url(input: &str) -> Result<url::Url> {
     Ok(url)
 }
 #[tauri::command]
-pub async fn fetch_page(url: String, state: State<'_, AppState>) -> Result<Value> {
-    use futures_util::StreamExt;
-    let parsed = http_url(&url)?;
-    let response = state
-        .http
-        .get(parsed)
-        .header("User-Agent", "StudyTool/0.1 (personal reader)")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| format!("ページを取得できません: {e}"))?;
-    let final_url = response.url().to_string();
-    http_url(&final_url)?;
-    let mime = response
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
-    if !mime.contains("text/html") && !mime.contains("application/xhtml") {
-        return Err("HTMLページのURLを指定してください".into());
-    }
-    let mut bytes = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        bytes.extend_from_slice(&chunk.map_err(|e| e.to_string())?);
-        if bytes.len() > 10 * 1024 * 1024 {
-            return Err("ページが10 MBを超えています".into());
-        }
-    }
-    let html = String::from_utf8(bytes)
-        .map_err(|_| "初版はUTF-8のWebページに対応しています".to_string())?;
-    Ok(json!({"html":html,"url":final_url}))
+pub async fn fetch_page(url: String) -> Result<Value> {
+    crate::web::fetch_public_page(&url).await
 }
 #[tauri::command]
 pub async fn save_document(mut document: Document, state: State<'_, AppState>) -> Result<Document> {

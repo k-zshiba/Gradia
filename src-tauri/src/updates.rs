@@ -82,8 +82,7 @@ pub struct UpdateInfo {
     raw_json: serde_json::Value,
 }
 
-/// Resolve public release assets through GitHub's API. The updater still parses
-/// the signed manifest and verifies the installer with the embedded public key.
+// A GitHub URL alone is not proof of authenticity; keep Tauri's installer verification.
 #[tauri::command]
 pub async fn check_release_update(
     app: AppHandle,

@@ -24,8 +24,7 @@ export async function installUpdate(
   progress: (event: DownloadEvent) => void,
   beforeInstall: () => Promise<void>,
 ) {
-  // The plugin validates the embedded public-key signature during download.
-  // Keep current work running until download and verification both succeed.
+  // Stopping work before signature verification would interrupt reading on a failed download.
   await update.download(progress, { timeout: 180_000 });
   await beforeInstall();
   await update.install({ restartAfterInstall: true });

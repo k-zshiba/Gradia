@@ -38,11 +38,13 @@ pdf +=
   `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
 const pdfPath = resolve(root, "reference.pdf");
 await writeFile(pdfPath, pdf);
+const html =
+  '<html><head><title>Web reference</title></head><body><article><h1>Ownership guide</h1><p>Ownership determines how a program manages memory. Each value has an owner. These rules prevent errors when references are shared.</p><pre><code>let text = "original";</code></pre><ul><li>Read the example.</li></ul><a href="/source">Original reference</a><script>window.injected=true</script></article></body></html>';
+let localRequests = 0;
 const server = createServer((_, res) => {
+  localRequests++;
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-  res.end(
-    '<html><head><title>Web reference</title></head><body><article><h1>Ownership guide</h1><p>Ownership determines how a program manages memory. Each value has an owner. These rules prevent errors when references are shared.</p><pre><code>let text = "original";</code></pre><ul><li>Read the example.</li></ul><a href="/source">Original reference</a><script>window.injected=true</script></article></body></html>',
-  );
+  res.end(html);
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const url = "http://127.0.0.1:" + server.address().port;
@@ -81,17 +83,23 @@ try {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const imported = await page.evaluate(
-    async ({ codePath, pdfPath, url }) => {
+    async ({ codePath, pdfPath, url, html }) => {
       const { api } = await import("/src/api.ts");
       const { importFile, extractWeb } = await import("/src/importers.ts");
       const code = await api.save(await importFile(await api.read(codePath)));
       const pdf = await api.save(await importFile(await api.read(pdfPath)));
-      const fetched = await api.fetch(url);
-      const article = extractWeb(fetched.html, fetched.url);
+      let localRejected = false;
+      try {
+        await api.fetch(url);
+      } catch {
+        localRejected = true;
+      }
+      const source = "https://example.org/gradia-fixture";
+      const article = extractWeb(html, source);
       const web = await api.save({
         ...article,
         kind: "web",
-        source: fetched.url,
+        source,
         content: "",
         ratio: 0,
         position: null,
@@ -102,10 +110,13 @@ try {
         web,
         pdfBytes: await api.pdf(pdf.id, pdf.revision),
         injected: window.injected,
+        localRejected,
       };
     },
-    { codePath, pdfPath, url },
+    { codePath, pdfPath, url, html },
   );
+  assert(imported.localRejected, "Private URL was accepted");
+  assert.equal(localRequests, 0, "Private server received an HTTP request");
   assert.equal(imported.code.content, code);
   assert.deepEqual(
     imported.code.segments
@@ -183,7 +194,7 @@ try {
       "native PDF extraction and snapshot",
       "PDF original canvas",
       "native Monaco code view and comment positions",
-      "Rust HTTP fetch and sanitized Web import",
+      "private HTTP requests refused and Web fixtures sanitized",
       "translation cancellation/failure keeps reader usable",
     ],
     pageErrors: errors,

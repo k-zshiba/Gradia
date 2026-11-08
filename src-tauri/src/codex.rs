@@ -139,9 +139,6 @@ impl Bridge {
                 secret: secret.clone(),
                 http: state.http.clone(),
             }));
-        let server = tokio::spawn(async move {
-            let _ = axum::serve(listener, router).await;
-        });
         let home = state.root.join("codex");
         let cwd = home.join("empty-workspace");
         std::fs::create_dir_all(&cwd).map_err(|e| e.to_string())?;
@@ -183,17 +180,15 @@ impl Bridge {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
-        let mut child = match command.spawn() {
-            Ok(c) => c,
-            Err(e) => {
-                server.abort();
-                return Err(format!(
-                    "Codexを起動できません。設定でcodex.exeを指定してください: {e}"
-                ));
-            }
-        };
+        let mut child = command.spawn().map_err(|e| {
+            format!("Codexを起動できません。設定でcodex.exeを指定してください: {e}")
+        })?;
         let input = child.stdin.take().ok_or("Codexの入力を開けません")?;
         let output = child.stdout.take().ok_or("Codexの出力を開けません")?;
+        // Spawning before fallible setup would leave a token-holding server on errors.
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
         let mut bridge = Self {
             child,
             input,
@@ -202,7 +197,10 @@ impl Bridge {
             queue: VecDeque::new(),
             server,
         };
-        bridge.rpc("initialize",json!({"clientInfo":{"name":"gradia","title":"Gradia","version":"0.1.0"},"capabilities":{"experimentalApi":false}})).await?;
+        bridge.rpc("initialize", json!({
+            "clientInfo": {"name":"gradia", "title":"Gradia", "version":env!("CARGO_PKG_VERSION")},
+            "capabilities": {"experimentalApi":false}
+        })).await?;
         bridge
             .send(json!({"method":"initialized","params":{}}))
             .await?;
@@ -374,7 +372,12 @@ async fn conversation(
                 state.store.save_message(&doc.id, &doc.revision, message)?;
             }
             "turn/completed" => {
-                return match p["turn"]["status"].as_str(){Some("completed")=>Ok(()),Some("interrupted")=>Err("interrupted".into()),_=>Err(p["turn"]["error"]["message"].as_str().unwrap_or("回答が失敗しました。契約の利用上限・モデル・接続状態を確認してください").into())};
+                return match p["turn"]["status"].as_str() {
+                    Some("completed") => Ok(()),
+                    Some("interrupted") => Err("interrupted".into()),
+                    _ => Err(p["turn"]["error"]["message"].as_str()
+                        .unwrap_or("回答が失敗しました。契約の利用上限・モデル・接続状態を確認してください").into()),
+                };
             }
             _ => {}
         }
@@ -445,12 +448,42 @@ pub async fn start_chat(
 mod tests {
     use super::*;
     #[test]
-    fn model_tools_are_removed() {
+    fn inference_does_not_offer_tools_or_store_requests() {
         let value = text_only(
             json!({"tools":[{"type":"function","name":"shell"}],"tool_choice":"required","temperature":1,"input":[]}),
         );
         assert_eq!(value["tools"], json!([]));
         assert!(value.get("tool_choice").is_none());
         assert_eq!(value["store"], false);
+        assert_eq!(value["stream"], true);
+    }
+
+    #[test]
+    fn rejects_sources_whose_text_version_or_location_differs_from_the_document() {
+        let doc: Document = serde_json::from_value(json!({
+            "title":"Fixture", "kind":"text", "source":"fixture.md", "revision":"v1",
+            "segments":[{"id":"s1", "block":0, "order":0, "text":"Original source.",
+                "kind":"paragraph", "eligible":true, "location":{"page":2}}],
+            "content":"Original source.", "warnings":[], "language":null, "ratio":0, "position":null
+        }))
+        .unwrap();
+        let reference = Reference {
+            id: "s1".into(),
+            segment_id: "s1".into(),
+            revision: "v1".into(),
+            text: "Original source.".into(),
+            translation: None,
+            location: json!({"page":2}),
+        };
+        assert!(validate_refs(&doc, std::slice::from_ref(&reference)).is_ok());
+        let mut changed = reference.clone();
+        changed.text = "Forged source.".into();
+        assert!(validate_refs(&doc, &[changed]).is_err());
+        let mut changed = reference.clone();
+        changed.revision = "v2".into();
+        assert!(validate_refs(&doc, &[changed]).is_err());
+        let mut changed = reference;
+        changed.location = json!({"page":99});
+        assert!(validate_refs(&doc, &[changed]).is_err());
     }
 }

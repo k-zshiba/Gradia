@@ -5,7 +5,7 @@ import { writeFile, readFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { createServer } from "node:net";
 import { randomUUID } from "node:crypto";
 
@@ -102,6 +102,31 @@ try {
     Object.values(translations).some((t) => t.text.includes("`read_value()`")),
   );
   assert(Object.values(translations).some((t) => t.text.includes("$x^2$")));
+  const listeningPort = Number(
+    execFileSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-Command",
+        `$engine = Get-CimInstance Win32_Process -Filter 'ParentProcessId = ${child.pid}' | Where-Object Name -eq 'llama-server.exe'; Get-NetTCPConnection -State Listen -OwningProcess $engine.ProcessId | Select-Object -First 1 -ExpandProperty LocalPort`,
+      ],
+      { encoding: "utf8", windowsHide: true },
+    ).trim(),
+  );
+  assert(listeningPort > 0, "Owned translation server was not found");
+  const denied = await fetch(
+    `http://127.0.0.1:${listeningPort}/v1/completions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "unauthorized request", max_tokens: 1 }),
+    },
+  );
+  assert.equal(
+    denied.status,
+    401,
+    "Translation accepted a request without the per-process key",
+  );
   await slider.fill("50");
   await expect(page.locator('[data-translated="true"]')).toHaveCount(
     Math.round(total / 2),
@@ -213,6 +238,7 @@ try {
       "native IPC",
       "SQLite persistence after application restart",
       "real PLaMo translation",
+      "translation server refuses unauthenticated inference",
       "code and formula preservation",
       "0/50/100 slider",
       "cache without new jobs",

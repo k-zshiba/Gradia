@@ -22,6 +22,7 @@ export const pdfOptions = {
   standardFontDataUrl: "/pdfjs/standard_fonts/",
   wasmUrl: "/pdfjs/wasm/",
   useSystemFonts: true,
+  isEvalSupported: false,
 };
 
 export function extractWeb(
@@ -68,7 +69,7 @@ export function extractWeb(
         if (["http:", "https:"].includes(href.protocol))
           return `[${text}](${href.href})`;
       } catch {
-        /* retain text */
+        /* An invalid link must not discard otherwise readable article text. */
       }
       return text;
     }
@@ -106,7 +107,7 @@ export async function extractCode(
   path: string,
 ): Promise<{ segments: Segment[]; language: string; warnings: string[] }> {
   const language = languageFor(path);
-  // Load the editor's registered tokenizer before asking it for classified tokens.
+  // Without lazy grammar loading, Monaco would silently miss translatable comments.
   const registration = monaco.languages
     .getLanguages()
     .find((l) => l.id === language);
@@ -193,7 +194,7 @@ export async function extractPdf(
         warnings.push(
           `p.${pageNo}: 段組み・表の読み順は原本と照合してください。`,
         );
-      // Preserve PDF item order; geometry gives an honest route back to the source.
+      // Guessing column order would corrupt some tables; keep the PDF's own item order.
       let parts: string[] = [];
       let rect: number[] = [];
       const flush = () => {

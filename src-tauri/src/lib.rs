@@ -5,6 +5,7 @@ mod model;
 mod store;
 mod translation;
 mod updates;
+mod web;
 use model::*;
 use serde_json::Value;
 use std::{collections::HashMap, path::PathBuf};
@@ -22,6 +23,28 @@ pub struct AppState {
     engine: Mutex<Option<translation::Engine>>,
     auth_gate: Mutex<()>,
     chat_gate: Mutex<()>,
+}
+impl AppState {
+    async fn cancel_jobs(&self) {
+        for token in self.jobs.lock().await.values() {
+            token.cancel();
+        }
+    }
+}
+
+#[cfg(test)]
+fn test_state(root: PathBuf) -> AppState {
+    AppState {
+        root,
+        store: store::Store::open(std::path::Path::new(":memory:")).unwrap(),
+        http: reqwest::Client::new(),
+        local_http: reqwest::Client::builder().no_proxy().build().unwrap(),
+        imports: Mutex::new(HashMap::new()),
+        jobs: Mutex::new(HashMap::new()),
+        engine: Mutex::new(None),
+        auth_gate: Mutex::new(()),
+        chat_gate: Mutex::new(()),
+    }
 }
 pub fn emit(app: &tauri::AppHandle, event: Value) {
     let _ = app.emit("study-job", event);
@@ -64,9 +87,7 @@ async fn save_settings(settings: Settings, state: State<'_, AppState>) -> Result
         || old.model_path != settings.model_path
         || old.gpu_layers != settings.gpu_layers
     {
-        for token in state.jobs.lock().await.values() {
-            token.cancel();
-        }
+        state.cancel_jobs().await;
         if let Some(mut engine) = state.engine.lock().await.take() {
             let _ = engine.child.kill().await;
         }
@@ -92,17 +113,8 @@ async fn cancel_job(job_id: String, state: State<'_, AppState>) -> Result<()> {
 }
 #[tauri::command]
 async fn prepare_update(state: State<'_, AppState>) -> Result<()> {
-    let tokens = state
-        .jobs
-        .lock()
-        .await
-        .values()
-        .cloned()
-        .collect::<Vec<_>>();
-    for token in tokens {
-        token.cancel();
-    }
-    // Jobs persist their final/interrupted state before removing themselves.
+    state.cancel_jobs().await;
+    // Exiting before jobs leave the map would lose their final chat/history state.
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
         while !state.jobs.lock().await.is_empty() {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -121,7 +133,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let root = app.path().app_local_data_dir()?;
-            // Development integration tests use an isolated database and credentials directory.
+            // Test runs must never overwrite the user's documents or credentials.
             #[cfg(debug_assertions)]
             let root = std::env::var_os("STUDY_TOOL_TEST_DATA_DIR")
                 .map(PathBuf::from)
@@ -131,9 +143,12 @@ pub fn run() {
                 store::Store::open(&root.join("study.sqlite3")).map_err(std::io::Error::other)?;
             let http = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(60))
-                .redirect(reqwest::redirect::Policy::limited(5))
+                .redirect(reqwest::redirect::Policy::none())
                 .build()?;
-            let local_http = reqwest::Client::builder().no_proxy().build()?;
+            let local_http = reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?;
             app.manage(AppState {
                 root,
                 store,

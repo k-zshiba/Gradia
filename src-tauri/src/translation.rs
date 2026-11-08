@@ -1,6 +1,6 @@
 use crate::{emit, files::hidden, model::*, AppState};
 use serde_json::{json, Value};
-use std::{path::PathBuf, process::Stdio, time::Duration};
+use std::{path::PathBuf, process::Stdio, sync::LazyLock, time::Duration};
 use tauri::{AppHandle, Manager, State};
 use tokio::process::{Child, Command};
 use tokio_util::sync::CancellationToken;
@@ -10,6 +10,7 @@ pub struct Engine {
     pub endpoint: String,
     pub model_hash: String,
     pub model_stamp: String,
+    api_key: String,
 }
 fn model_stamp(state: &AppState) -> Result<String> {
     let settings = state.store.settings()?;
@@ -36,9 +37,11 @@ pub fn check_model_stamp(state: &AppState) -> Result<String> {
     Ok(stamp)
 }
 pub fn protect(text: &str) -> (String, Vec<String>) {
-    let regex = regex::Regex::new(r"`[^`\n]*`|\$[^$\n]+\$|https?://[^\s)]+").unwrap();
+    static LITERALS: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"`[^`\n]*`|\$[^$\n]+\$|https?://[^\s)]+").expect("valid literal pattern")
+    });
     let mut saved = Vec::new();
-    let masked = regex
+    let masked = LITERALS
         .replace_all(text, |m: &regex::Captures<'_>| {
             let id = saved.len();
             saved.push(m[0].to_string());
@@ -112,6 +115,7 @@ async fn ensure_engine(state: &AppState) -> Result<()> {
     let socket = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     let port = socket.local_addr().map_err(|e| e.to_string())?.port();
     drop(socket);
+    let api_key = uuid::Uuid::new_v4().to_string();
     let mut command = Command::new(crate::files::executable(&settings.llama_path)?);
     hidden(&mut command);
     command
@@ -131,6 +135,9 @@ async fn ensure_engine(state: &AppState) -> Result<()> {
             "-ngl",
             &settings.gpu_layers.to_string(),
         ])
+        // Loopback alone does not stop a web page from submitting inference requests.
+        // Environment avoids exposing the key in the process command line.
+        .env("LLAMA_API_KEY", &api_key)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -159,6 +166,7 @@ async fn ensure_engine(state: &AppState) -> Result<()> {
                 endpoint,
                 model_hash,
                 model_stamp,
+                api_key,
             });
             return Ok(());
         }
@@ -200,34 +208,10 @@ async fn run(
         if !segment.eligible {
             continue;
         }
-        let start = segment.order.saturating_sub(2);
-        let context = doc
-            .segments
-            .iter()
-            .skip(start)
-            .take(5)
-            .filter(|s| s.id != id)
-            .map(|s| s.text.as_str())
-            .collect::<Vec<_>>()
-            .join("\n")
-            .chars()
-            .take(3000)
-            .collect::<String>();
-        let result:Result<(String,bool)>=async {
-            let (prompt,saved)=prompt(&segment.text,&context)?;
-            if prompt.chars().count()>14000{return Err("この文は長すぎるため翻訳できません".into());}
-            let guard=state.engine.lock().await;let engine=guard.as_ref().ok_or("翻訳エンジンが停止しています")?;
-            let key=digest(format!("pfml3-v1\n{}\n{prompt}",engine.model_hash).as_bytes());
-            if let Some(text)=state.store.cached(&key)?{state.store.translation(&doc.id,&doc.revision,&id,&key,&text)?;return Ok((text,true));}
-            let request=state.local_http.post(format!("{}/v1/completions",engine.endpoint)).timeout(Duration::from_secs(180)).json(&json!({"model":"plamo-3-translate","prompt":prompt,"temperature":0,"max_tokens":2048,"stop":["<|plamo:tag|>","<|plamo:bos|>"]})).send();
-            let response=tokio::select!{_ = cancel.cancelled()=>return Err("interrupted".into()), r=request=>r.map_err(|e|e.to_string())?};
-            let body:Value=response.error_for_status().map_err(|e|e.to_string())?.json().await.map_err(|e|e.to_string())?;
-            if body["choices"][0]["finish_reason"]=="length"{return Err("翻訳が出力上限に達しました。原文を表示します".into());}
-            let translated=body["choices"][0]["text"].as_str().ok_or("翻訳結果がありません")?.trim();
-            if translated.is_empty(){return Err("翻訳結果が空です".into());}
-            let text=restore(translated,&saved)?;
-            state.store.translation(&doc.id,&doc.revision,&id,&key,&text)?;Ok((text,false))
-        }.await;
+        let result = tokio::select! {
+            _ = cancel.cancelled() => return Err("interrupted".into()),
+            result = translate_segment(&state, doc, segment) => result,
+        };
         match result {
             Ok((text, cached)) => emit(
                 app,
@@ -241,6 +225,60 @@ async fn run(
         }
     }
     Ok(())
+}
+async fn translate_segment(
+    state: &AppState,
+    doc: &Document,
+    segment: &Segment,
+) -> Result<(String, bool)> {
+    let context = doc
+        .segments
+        .iter()
+        .skip(segment.order.saturating_sub(2))
+        .take(5)
+        .filter(|s| s.id != segment.id)
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .chars()
+        .take(3000)
+        .collect::<String>();
+    let (prompt, saved) = prompt(&segment.text, &context)?;
+    if prompt.chars().count() > 14000 {
+        return Err("この文は長すぎるため翻訳できません".into());
+    }
+    let guard = state.engine.lock().await;
+    let engine = guard.as_ref().ok_or("翻訳エンジンが停止しています")?;
+    let key = digest(format!("pfml3-v1\n{}\n{prompt}", engine.model_hash).as_bytes());
+    let cached = state.store.cached(&key)?;
+    let from_cache = cached.is_some();
+    let text = if let Some(text) = cached {
+        text
+    } else {
+        let body: Value = state.local_http
+            .post(format!("{}/v1/completions", engine.endpoint))
+            .bearer_auth(&engine.api_key)
+            .timeout(Duration::from_secs(180))
+            .json(&json!({"model":"plamo-3-translate","prompt":prompt,"temperature":0,"max_tokens":2048,"stop":["<|plamo:tag|>","<|plamo:bos|>"]}))
+            .send().await.map_err(|e| e.to_string())?
+            .error_for_status().map_err(|e| e.to_string())?
+            .json().await.map_err(|e| e.to_string())?;
+        if body["choices"][0]["finish_reason"] == "length" {
+            return Err("翻訳が出力上限に達しました。原文を表示します".into());
+        }
+        let translated = body["choices"][0]["text"]
+            .as_str()
+            .ok_or("翻訳結果がありません")?
+            .trim();
+        if translated.is_empty() {
+            return Err("翻訳結果が空です".into());
+        }
+        restore(translated, &saved)?
+    };
+    state
+        .store
+        .translation(&doc.id, &doc.revision, &segment.id, &key, &text)?;
+    Ok((text, from_cache))
 }
 #[tauri::command]
 pub async fn start_translation(

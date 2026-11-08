@@ -28,7 +28,7 @@ export function isEnglish(text: string): boolean {
   );
 }
 export function sentences(text: string): string[] {
-  // Protect inline literals and math from sentence boundaries, retaining exact source spelling.
+  // Periods inside code and math are not prose sentence boundaries.
   const protectedText: string[] = [];
   const safe = text.replace(/`[^`\n]*`|\$[^$\n]+\$/g, (m) => {
     protectedText.push(m);

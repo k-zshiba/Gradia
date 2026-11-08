@@ -76,6 +76,10 @@ fn crypt(bytes: &[u8], encrypt: bool) -> Result<Vec<u8>> {
             ));
         }
         let result = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
+        if !encrypt {
+            use zeroize::Zeroize;
+            std::slice::from_raw_parts_mut(output.pbData, output.cbData as usize).zeroize();
+        }
         LocalFree(output.pbData as *mut _);
         Ok(result)
     }
@@ -104,14 +108,10 @@ fn save(state: &AppState, creds: &Credentials) -> Result<()> {
     plain.zeroize();
     let encrypted = encrypted?;
     let path = state.root.join("account.dpapi");
-    // A backup keeps refresh credentials recoverable if a replace is interrupted on Windows.
+    // Truncating the current file would lose valid credentials if a refresh write failed.
     let temp = state.root.join("account.dpapi.new");
     std::fs::write(&temp, encrypted).map_err(|e| e.to_string())?;
-    if path.exists() {
-        std::fs::copy(&path, state.root.join("account.dpapi.bak")).map_err(|e| e.to_string())?;
-    }
     std::fs::rename(temp, path).map_err(|e| e.to_string())?;
-    let _ = std::fs::remove_file(state.root.join("account.dpapi.bak"));
     Ok(())
 }
 fn check_scopes(scopes: &str) -> Result<()> {
@@ -221,7 +221,7 @@ pub async fn access(state: &AppState) -> Result<Credentials> {
     save(state, &creds)?;
     Ok(creds)
 }
-async fn login(app: &AppHandle, cancel: tokio_util::sync::CancellationToken) -> Result<String> {
+async fn login(app: &AppHandle) -> Result<String> {
     let state = app.state::<AppState>();
     let _guard = state.auth_gate.lock().await;
     let existing = load(&state)?;
@@ -277,15 +277,17 @@ async fn login(app: &AppHandle, cancel: tokio_util::sync::CancellationToken) -> 
     }
     webbrowser::open(url.as_str()).map_err(|e| e.to_string())?;
     let result = tokio::time::timeout(Duration::from_secs(300), async {
-        loop {
+        'callbacks: loop {
             let (mut socket, _) = listener.accept().await.map_err(|e| e.to_string())?;
             let mut bytes = Vec::new();
             let mut chunk = [0u8; 2048];
             while bytes.len() < 16_384 {
-                let n = tokio::time::timeout(Duration::from_secs(3), socket.read(&mut chunk))
+                let n = match tokio::time::timeout(Duration::from_secs(3), socket.read(&mut chunk))
                     .await
-                    .map_err(|_| "認証コールバックがタイムアウトしました")?
-                    .map_err(|e| e.to_string())?;
+                {
+                    Ok(Ok(n)) => n,
+                    _ => continue 'callbacks,
+                };
                 if n == 0 {
                     break;
                 }
@@ -302,8 +304,9 @@ async fn login(app: &AppHandle, cancel: tokio_util::sync::CancellationToken) -> 
                 .split_whitespace()
                 .nth(1)
                 .unwrap_or("");
-            let parsed = url::Url::parse(&format!("http://127.0.0.1{target}"))
-                .map_err(|_| "認証コールバックが不正です")?;
+            let Ok(parsed) = url::Url::parse(&format!("http://127.0.0.1{target}")) else {
+                continue;
+            };
             let query: HashMap<String, String> = parsed.query_pairs().into_owned().collect();
             if parsed.path() != "/auth/callback" || query.get("state") != Some(&expected_state) {
                 let _=socket.write_all(b"HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n").await;
@@ -365,7 +368,9 @@ async fn login(app: &AppHandle, cancel: tokio_util::sync::CancellationToken) -> 
             return Ok(creds.email);
         }
     });
-    tokio::select! {_ = cancel.cancelled()=>Err("interrupted".into()), result=result=>result.map_err(|_|"認証がタイムアウトしました".to_string())?}
+    result
+        .await
+        .map_err(|_| "認証がタイムアウトしました".to_string())?
 }
 #[tauri::command]
 pub async fn sign_in(app: AppHandle, state: State<'_, AppState>) -> Result<String> {
@@ -374,7 +379,11 @@ pub async fn sign_in(app: AppHandle, state: State<'_, AppState>) -> Result<Strin
     state.jobs.lock().await.insert(job.clone(), token.clone());
     let cloned = job.clone();
     tokio::spawn(async move {
-        let result = login(&app, token).await;
+        let result = tokio::select! {
+            biased;
+            _ = token.cancelled() => Err("interrupted".into()),
+            result = login(&app) => result,
+        };
         emit(
             &app,
             json!({"jobId":cloned,"documentId":"","kind":"auth","status":if result.is_ok(){"completed"}else{"failed"},"error":result.err()}),
@@ -385,11 +394,12 @@ pub async fn sign_in(app: AppHandle, state: State<'_, AppState>) -> Result<Strin
 }
 #[tauri::command]
 pub async fn sign_out(state: State<'_, AppState>) -> Result<()> {
+    disconnect(&state).await
+}
+async fn disconnect(state: &AppState) -> Result<()> {
+    // Login holds auth_gate while awaiting consent; locking first would delay logout.
+    state.cancel_jobs().await;
     let _guard = state.auth_gate.lock().await;
-    // Stop any in-flight inference before dropping the app's credentials.
-    for token in state.jobs.lock().await.values() {
-        token.cancel();
-    }
     for name in ["account.dpapi", "account.dpapi.new", "account.dpapi.bak"] {
         let path = state.root.join(name);
         if path.exists() {
@@ -413,5 +423,33 @@ mod tests {
     fn requires_plan_scope() {
         assert!(check_scopes("openid profile").is_err());
         assert!(check_scopes("openid chatgpt.tokens.use.direct").is_ok());
+    }
+
+    #[tokio::test]
+    async fn logout_cancels_a_pending_login_and_removes_all_credentials() {
+        let root = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(crate::test_state(root.path().to_path_buf()));
+        for name in ["account.dpapi", "account.dpapi.new", "account.dpapi.bak"] {
+            std::fs::write(root.path().join(name), b"test credentials").unwrap();
+        }
+        let token = tokio_util::sync::CancellationToken::new();
+        state
+            .jobs
+            .lock()
+            .await
+            .insert("pending-login".into(), token.clone());
+        let held = state.auth_gate.lock().await;
+        let cloned = state.clone();
+        let logout = tokio::spawn(async move { disconnect(&cloned).await });
+        tokio::time::timeout(Duration::from_secs(2), token.cancelled())
+            .await
+            .unwrap();
+        drop(held);
+        tokio::time::timeout(Duration::from_secs(2), logout)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
     }
 }
