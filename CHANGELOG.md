@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.1] - 2026-11-08
+
+- GitHub Release API経由で最新版・配布ファイルを取得し、通常のダウンロードURLに接続できない環境でも署名付き更新を利用できるように修正。
+
 ## [0.2.0] - 2026-11-08
 
 - GradiaのWindows版をGitHub Releaseから配布。

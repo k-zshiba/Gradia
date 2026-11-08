@@ -118,10 +118,10 @@ flowchart TB
   Secret["GitHub Actions Secret<br/>署名秘密鍵"] --> Build
   Build --> Draft["Draft Release<br/>exe / sig / latest.json / SHA256SUMS"]
   Draft --> Publish["全ファイル取得後に公開<br/>安定版だけlatestに指定"]
-  Publish --> Startup["アプリ起動時に安定版チェック"]
+  Publish --> Startup["アプリ起動時にRelease APIで安定版チェック"]
   Startup --> Prompt{"新しい版あり<br/>更新に同意?"}
   Prompt -->|"いいえ"| Read["現在の版で継続"]
-  Prompt -->|"はい"| Download["取得・埋込公開鍵で署名検証"]
+  Prompt -->|"はい"| Download["Asset APIから取得<br/>埋込公開鍵で署名検証"]
   Download -->|"検証成功"| Stop["読書位置保存・ジョブ中断<br/>子プロセス終了"]
   Download -->|"失敗"| Read
   Stop --> Install["NSISで置換・自動再起動"]
@@ -138,6 +138,7 @@ flowchart TB
 | `src/App.tsx` / `components.tsx`       | 3ペイン、PDF原本、コード、設定        |
 | `src/core.ts` / `importers.ts`         | 文分割、順位、保護、資料抽出          |
 | `src/UpdateControl.tsx` / `updater.ts` | 更新確認と同意、進捗                  |
+| `src-tauri/src/updates.rs`             | Release API・配布物の解決と版の検査    |
 | `src-tauri/src/files.rs` / `store.rs`  | 原本・版・SQLite                      |
 | `src-tauri/src/translation.rs`         | PLaMo子プロセスとキャッシュ           |
 | `src-tauri/src/auth.rs` / `codex.rs`   | OAuth・DPAPI・Codex・ゲート           |

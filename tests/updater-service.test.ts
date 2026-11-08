@@ -1,6 +1,6 @@
 import { beforeEach, it, expect, vi } from "vitest";
 const mocked = vi.hoisted(() => ({ check: vi.fn() }));
-vi.mock("@tauri-apps/plugin-updater", () => ({ check: mocked.check }));
+vi.mock("../src/api", () => ({ call: mocked.check }));
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();

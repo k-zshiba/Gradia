@@ -1,8 +1,5 @@
-import {
-  check,
-  type Update,
-  type DownloadEvent,
-} from "@tauri-apps/plugin-updater";
+import { Update, type DownloadEvent } from "@tauri-apps/plugin-updater";
+import { call } from "./api";
 
 export type AppUpdate = Pick<
   Update,
@@ -10,8 +7,11 @@ export type AppUpdate = Pick<
 >;
 let startup: Promise<AppUpdate | null> | undefined;
 
-export function checkForUpdate(): Promise<AppUpdate | null> {
-  return check({ timeout: 15_000 });
+export async function checkForUpdate(): Promise<AppUpdate | null> {
+  const metadata = await call<ConstructorParameters<typeof Update>[0] | null>(
+    "check_release_update",
+  );
+  return metadata ? new Update(metadata) : null;
 }
 
 // React StrictMode mounts effects twice in development; make one startup request.

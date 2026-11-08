@@ -4,6 +4,7 @@ mod files;
 mod model;
 mod store;
 mod translation;
+mod updates;
 use model::*;
 use serde_json::Value;
 use std::{collections::HashMap, path::PathBuf};
@@ -161,6 +162,7 @@ pub fn run() {
             save_settings,
             cancel_job,
             prepare_update,
+            updates::check_release_update,
             translation::start_translation,
             translation::start_engine,
             translation::stop_engine,

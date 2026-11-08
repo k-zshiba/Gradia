@@ -1,6 +1,6 @@
 [package]
 name = "gradia"
-version = "0.2.0"
+version = "0.2.1"
 description = "Local reading, translation and study assistant"
 edition = "2021"
 
@@ -17,6 +17,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+semver = "1"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
