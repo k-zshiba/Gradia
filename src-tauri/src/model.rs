@@ -29,6 +29,8 @@ pub struct Document {
     pub warnings: Vec<String>,
     pub language: Option<String>,
     pub ratio: u8,
+    #[serde(default)]
+    pub bilingual: bool,
     pub position: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]

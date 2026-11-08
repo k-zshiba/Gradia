@@ -312,8 +312,12 @@ export default function App() {
   }, [doc?.id, doc?.revision]);
   const shown = pages[Math.min(page, pages.length - 1)] || [];
   const chosen = useMemo(
-    () => chosenSegments(doc?.segments || [], doc?.ratio || 0),
-    [doc?.segments, doc?.ratio],
+    () =>
+      chosenSegments(
+        doc?.segments || [],
+        doc?.bilingual ? 100 : doc?.ratio || 0,
+      ),
+    [doc?.segments, doc?.ratio, doc?.bilingual],
   );
   const ready = [...chosen].filter(
     (id) => translations[id]?.status === "ready",
@@ -354,7 +358,7 @@ export default function App() {
       .querySelectorAll("[data-segment]")
       .forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [activeKey, page, loaded, doc?.ratio]);
+  }, [activeKey, page, loaded, doc?.ratio, doc?.bilingual]);
   useEffect(() => {
     if (!doc || doc.id === "sample" || !loaded) return;
     const timer = setTimeout(
@@ -365,12 +369,13 @@ export default function App() {
             doc.revision,
             doc.ratio,
             visible[0] || doc.position,
+            doc.bilingual || false,
           )
           .catch(error),
       600,
     );
     return () => clearTimeout(timer);
-  }, [activeKey, doc?.ratio, visible, loaded]);
+  }, [activeKey, doc?.ratio, doc?.bilingual, visible, loaded]);
   useEffect(() => {
     if (doc?.position && loaded) {
       const index = pages.findIndex((p) =>
@@ -449,7 +454,7 @@ export default function App() {
     if (!loaded || !doc || doc.id === "sample" || !settings.modelPath) return;
     const timer = setTimeout(() => void translate(), 450);
     return () => clearTimeout(timer);
-  }, [activeKey, doc?.ratio, loaded, settings.modelPath]);
+  }, [activeKey, doc?.ratio, doc?.bilingual, loaded, settings.modelPath]);
   function updateRatio(ratio: number) {
     setDocuments((list) =>
       list.map((d) => (key(d) === activeKey ? { ...d, ratio } : d)),
@@ -675,7 +680,9 @@ export default function App() {
             {d.id === "sample"
               ? "操作サンプル"
               : `${d.kind.toUpperCase()} · ${new Date(d.createdAt).toLocaleDateString("ja-JP")}`}
-            {d.ratio > 0 && ` · 日本語 ${d.ratio}%`}
+            {d.bilingual
+              ? " · 英日併記"
+              : d.ratio > 0 && ` · 日本語 ${d.ratio}%`}
           </small>
         </span>
       </button>
@@ -703,6 +710,7 @@ export default function App() {
                   doc.revision,
                   doc.ratio,
                   visible[0] || doc.position,
+                  doc.bilingual || false,
                 );
               await api.prepareUpdate();
             }}
@@ -928,31 +936,63 @@ export default function App() {
                   </button>
                 </div>
               </div>
-              <div className="translation-toolbar">
-                <div>
-                  <Languages size={18} />
-                  <strong>日本語の割合</strong>
-                </div>
-                <span className="range-end">原文</span>
-                <input
-                  aria-label="日本語の割合"
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={doc.ratio}
-                  onChange={(e) => updateRatio(Number(e.target.value))}
-                />
-                <output>
-                  {doc.ratio}
-                  <small>%</small>
-                </output>
+              <div className="display-mode-toolbar">
+                <span>表示モード</span>
                 <button
-                  className="text-button"
-                  onClick={() => updateRatio(doc.ratio === 100 ? 0 : 100)}
+                  className="mode-switch"
+                  type="button"
+                  role="switch"
+                  aria-checked={!!doc.bilingual}
+                  aria-label="英語と日本語を併記"
+                  onClick={() => {
+                    setPeek(new Set());
+                    setDocuments((list) =>
+                      list.map((d) =>
+                        key(d) === activeKey
+                          ? { ...d, bilingual: !d.bilingual }
+                          : d,
+                      ),
+                    );
+                  }}
                 >
-                  {doc.ratio === 100 ? "原文に戻す" : "全文翻訳"}
+                  <span className="switch-track">
+                    <span />
+                  </span>
+                  {doc.bilingual ? "英日を併記" : "割合で切り替え"}
                 </button>
               </div>
+              {doc.bilingual ? (
+                <div className="bilingual-toolbar">
+                  <Languages size={18} />
+                  原文の下に日本語訳を表示します
+                </div>
+              ) : (
+                <div className="translation-toolbar">
+                  <div>
+                    <Languages size={18} />
+                    <strong>日本語の割合</strong>
+                  </div>
+                  <span className="range-end">原文</span>
+                  <input
+                    aria-label="日本語の割合"
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={doc.ratio}
+                    onChange={(e) => updateRatio(Number(e.target.value))}
+                  />
+                  <output>
+                    {doc.ratio}
+                    <small>%</small>
+                  </output>
+                  <button
+                    className="text-button"
+                    onClick={() => updateRatio(doc.ratio === 100 ? 0 : 100)}
+                  >
+                    {doc.ratio === 100 ? "原文に戻す" : "全文翻訳"}
+                  </button>
+                </div>
+              )}
               <div className="reader-meta">
                 <label className="document-search">
                   <Search size={14} />
@@ -1115,14 +1155,15 @@ export default function App() {
                           chosen.has(s.id) &&
                           t?.status === "ready" &&
                           !peek.has(s.id);
-                        const text = translated ? t.text : s.text;
+                        const text =
+                          !doc.bilingual && translated ? t.text : s.text;
                         return (
                           <div
                             id={`segment-${s.id}`}
                             data-segment={s.id}
                             data-translated={translated ? "true" : "false"}
                             key={s.id}
-                            className={`segment ${s.kind} ${translated ? "translated" : ""} ${selection.includes(s.id) ? "selected" : ""}`}
+                            className={`segment ${s.kind} ${translated && !doc.bilingual ? "translated" : ""} ${doc.bilingual && s.eligible ? "bilingual" : ""} ${selection.includes(s.id) ? "selected" : ""}`}
                           >
                             {s.kind === "comment" && (
                               <button
@@ -1143,21 +1184,36 @@ export default function App() {
                                 <InlineText text={text} />
                               </p>
                             )}
-                            {chosen.has(s.id) && t?.status === "ready" && (
-                              <button
-                                className="original-toggle"
-                                onClick={() =>
-                                  setPeek((previous) => {
-                                    const next = new Set(previous);
-                                    if (next.has(s.id)) next.delete(s.id);
-                                    else next.add(s.id);
-                                    return next;
-                                  })
-                                }
-                              >
-                                {peek.has(s.id) ? "訳文" : "原文"}
-                              </button>
-                            )}
+                            {doc.bilingual &&
+                              s.eligible &&
+                              t?.status === "ready" && (
+                                <div
+                                  className="bilingual-translation"
+                                  lang="ja"
+                                >
+                                  <span className="translation-label">
+                                    日本語
+                                  </span>
+                                  <InlineText text={t.text} />
+                                </div>
+                              )}
+                            {!doc.bilingual &&
+                              chosen.has(s.id) &&
+                              t?.status === "ready" && (
+                                <button
+                                  className="original-toggle"
+                                  onClick={() =>
+                                    setPeek((previous) => {
+                                      const next = new Set(previous);
+                                      if (next.has(s.id)) next.delete(s.id);
+                                      else next.add(s.id);
+                                      return next;
+                                    })
+                                  }
+                                >
+                                  {peek.has(s.id) ? "訳文" : "原文"}
+                                </button>
+                              )}
                             {chosen.has(s.id) && t?.status === "failed" && (
                               <small
                                 className="translation-error"
@@ -1166,9 +1222,18 @@ export default function App() {
                                 翻訳失敗 · 原文を表示
                               </small>
                             )}
-                            {chosen.has(s.id) && !t && (
-                              <span className="pending-mark" title="翻訳待ち" />
-                            )}
+                            {chosen.has(s.id) &&
+                              (!t || t.status === "pending") &&
+                              (doc.bilingual ? (
+                                <small className="bilingual-waiting">
+                                  日本語訳を準備中
+                                </small>
+                              ) : (
+                                <span
+                                  className="pending-mark"
+                                  title="翻訳待ち"
+                                />
+                              ))}
                           </div>
                         );
                       })}

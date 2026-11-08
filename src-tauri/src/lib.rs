@@ -87,9 +87,12 @@ fn save_preference(
     revision: String,
     ratio: u8,
     position: Option<String>,
+    bilingual: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<()> {
-    state.store.preference(&id, &revision, ratio, position)
+    state
+        .store
+        .preference(&id, &revision, ratio, position, bilingual.unwrap_or(false))
 }
 #[tauri::command]
 fn get_translations(id: String, revision: String, state: State<'_, AppState>) -> Result<Value> {

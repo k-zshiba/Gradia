@@ -164,10 +164,12 @@ impl Store {
         rev: &str,
         ratio: u8,
         position: Option<String>,
+        bilingual: bool,
     ) -> Result<()> {
         let mut doc = self.document(id, rev)?;
         doc.ratio = ratio.min(100);
         doc.position = position;
+        doc.bilingual = bilingual;
         self.0
             .lock()
             .map_err(|e| e.to_string())?
@@ -355,6 +357,7 @@ mod tests {
             warnings: vec![],
             language: None,
             ratio: 50,
+            bilingual: false,
             position: Some("sentence".into()),
         }
     }
@@ -451,5 +454,29 @@ mod tests {
         assert!(s.create_project("rust").is_err());
         assert!(s.rename_project("missing", "Other").is_err());
         assert!(s.project_document(&p.id, "missing", "v1", true).is_err());
+    }
+    #[test]
+    fn bilingual_mode_survives_restart_without_replacing_the_translation_ratio() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reading.sqlite3");
+        {
+            let s = Store::open(&path).unwrap();
+            let old = serde_json::to_value(document("v1")).unwrap();
+            let mut old = old.as_object().unwrap().clone();
+            old.remove("bilingual");
+            let legacy: Document = serde_json::from_value(Value::Object(old)).unwrap();
+            assert!(!legacy.bilingual);
+            s.put_document(&legacy, None).unwrap();
+            s.preference("source", "v1", 50, Some("sentence".into()), true)
+                .unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        let restored = s.document("source", "v1").unwrap();
+        assert!(restored.bilingual);
+        assert_eq!(restored.ratio, 50);
+        s.preference("source", "v1", 50, None, false).unwrap();
+        let mixed = s.document("source", "v1").unwrap();
+        assert!(!mixed.bilingual);
+        assert_eq!(mixed.ratio, 50);
     }
 }

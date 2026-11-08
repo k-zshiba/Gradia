@@ -460,6 +460,73 @@ small {
   background: #fbfcf5;
   flex-shrink: 0;
 }
+.display-mode-toolbar,
+.bilingual-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 26px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  color: #68795b;
+}
+.mode-switch {
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+}
+.switch-track {
+  width: 30px;
+  height: 18px;
+  border-radius: 10px;
+  padding: 3px;
+  background: #b3beac;
+  display: inline-flex;
+  align-items: center;
+}
+.switch-track > span {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.15s;
+}
+.mode-switch[aria-checked="true"] .switch-track {
+  background: var(--green);
+}
+.mode-switch[aria-checked="true"] .switch-track > span {
+  transform: translateX(12px);
+}
+.bilingual-translation {
+  margin: 8px 0 15px;
+  padding: 8px 12px;
+  border-left: 2px solid #91a87d;
+  border-radius: 0 5px 5px 0;
+  background: #f1f5eb;
+  color: #315c46;
+  font-size: 14px;
+  line-height: 1.9;
+}
+.translation-label {
+  display: block;
+  font:
+    10px "Segoe UI",
+    "Yu Gothic UI",
+    sans-serif;
+  color: #718764;
+  margin-bottom: 4px;
+}
+.bilingual-waiting {
+  display: block;
+  color: #839087;
+  padding: 6px 0;
+}
+.segment.comment.bilingual {
+  display: block;
+}
+.segment.comment.bilingual .line-label {
+  margin-bottom: 6px;
+}
 .translation-toolbar > div {
   display: flex;
   align-items: center;

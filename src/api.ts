@@ -49,7 +49,9 @@ export const api = {
     revision: string,
     ratio: number,
     position: string | null,
-  ) => call<void>("save_preference", { id, revision, ratio, position }),
+    bilingual = false,
+  ) =>
+    call<void>("save_preference", { id, revision, ratio, position, bilingual }),
   translations: (id: string, revision: string) =>
     call<Record<string, Translation>>("get_translations", { id, revision }),
   translate: (documentId: string, revision: string, segmentIds: string[]) =>

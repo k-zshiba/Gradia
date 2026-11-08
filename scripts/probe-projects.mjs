@@ -166,6 +166,17 @@ try {
     .getByRole("button", { name: /first.md/ })
     .click();
   await expect(page.locator(".article h1")).toHaveText("first.md");
+  await page.getByRole("slider", { name: "日本語の割合" }).fill("50");
+  await page.getByRole("switch", { name: "英語と日本語を併記" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const { api } = await import("/src/api.ts");
+        return (await api.list()).find((d) => d.title === "first.md")
+          ?.bilingual;
+      }),
+    )
+    .toBe(true);
   await page.getByRole("button", { name: "プロジェクトを管理" }).click();
   await page.getByLabel("プロジェクト名").fill("Reading books");
   await page.getByRole("button", { name: "名前を保存" }).click();
@@ -178,6 +189,13 @@ try {
     books,
   );
   await expect(page.locator(".article h1")).toHaveText("first.md");
+  await expect(
+    page.getByRole("switch", { name: "英語と日本語を併記" }),
+  ).toBeChecked();
+  await page.getByRole("switch", { name: "英語と日本語を併記" }).click();
+  await expect(page.getByRole("slider", { name: "日本語の割合" })).toHaveValue(
+    "50",
+  );
   await page.getByRole("button", { name: "既存の資料を選ぶ・外す" }).click();
   await page.getByRole("checkbox", { name: /first.md/ }).click();
   await expect(
@@ -200,7 +218,7 @@ try {
   await page.screenshot({ path: "test-results/projects.png", fullPage: true });
   assert.equal(await readFile(first, "utf8"), original);
   console.log(
-    "Native projects: multiple files, partial failure, nested folder, shared references, rename, restart, removal, deletion and source preservation passed.",
+    "Native projects: multiple files, partial failure, nested folder, shared references, rename, restart, bilingual persistence, ratio restoration, removal, deletion and source preservation passed.",
   );
 } finally {
   await stop();

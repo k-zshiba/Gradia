@@ -73,6 +73,26 @@ test("reading, translation slider, original reveal and chat context", async ({
       .locator('[data-translated="true"]')
       .evaluateAll((nodes) => nodes.map((n) => n.getAttribute("data-segment"))),
   ).toEqual(half);
+  const bilingual = page.getByRole("switch", { name: "英語と日本語を併記" });
+  await bilingual.click();
+  await expect(bilingual).toBeChecked();
+  await expect(slider).toHaveCount(0);
+  await expect(page.locator(".bilingual-translation")).toHaveCount(total);
+  const owner = page.locator('[data-segment="b3s0"]');
+  await expect(owner).toContainText("Every value in Rust has an owner.");
+  await expect(owner).toContainText("Rustのすべての値には所有者がいる。");
+  await expect(page.locator(".segment.code")).toContainText(
+    'let message = String::from("Hello, world!");',
+  );
+  await page.screenshot({ path: "test-results/bilingual.png", fullPage: true });
+  await bilingual.click();
+  await expect(bilingual).not.toBeChecked();
+  await expect(slider).toHaveValue("50");
+  expect(
+    await page
+      .locator('[data-translated="true"]')
+      .evaluateAll((nodes) => nodes.map((n) => n.getAttribute("data-segment"))),
+  ).toEqual(half);
   await slider.fill("0");
   await expect(page.locator('[data-translated="true"]')).toHaveCount(0);
   await page.getByRole("textbox", { name: "本文を検索" }).fill("owner");

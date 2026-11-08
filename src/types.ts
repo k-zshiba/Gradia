@@ -28,6 +28,7 @@ export interface Document {
   warnings: string[];
   language?: string;
   ratio: number;
+  bilingual?: boolean;
   position: string | null;
 }
 export interface Project {
