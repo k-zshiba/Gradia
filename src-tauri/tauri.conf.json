@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Study Tool",
+  "version": "0.1.0",
+  "identifier": "local.study-tool.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Study Tool",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 1000,
+        "minHeight": 680
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420; object-src 'none'; frame-src 'none'; base-uri 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "targets": ["nsis"],
+    "shortDescription": "読む、理解する。",
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": false,
+        "languages": ["Japanese"],
+        "installMode": "currentUser"
+      }
+    }
+  }
+}
