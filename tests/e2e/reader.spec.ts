@@ -38,6 +38,31 @@ test("reading, translation slider, original reveal and chat context", async ({
   await expect(page.locator('[data-translated="true"]')).toHaveCount(
     Math.round(total / 2),
   );
+  expect(
+    await page
+      .locator(".article [data-segment]:not(.code-block)")
+      .evaluateAll((nodes) =>
+        nodes
+          .filter((n) => n.getAttribute("data-segment") !== "b5s0")
+          .map((n) => n.getAttribute("data-translated") === "true"),
+      ),
+  ).toEqual([
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+  ]);
   const half = await page
     .locator('[data-translated="true"]')
     .evaluateAll((nodes) => nodes.map((n) => n.getAttribute("data-segment")));

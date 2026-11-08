@@ -23,8 +23,13 @@ describe("translation selection", () => {
   });
   it("is monotonic and stable across slider round trips", () => {
     const half = chosenSegments(segments, 50);
-    const more = chosenSegments(segments, 60);
-    for (const id of half) expect(more.has(id)).toBe(true);
+    let previous = new Set<string>();
+    for (let ratio = 0; ratio <= 100; ratio++) {
+      const next = chosenSegments(segments, ratio);
+      expect(next.size).toBe(ratio);
+      for (const id of previous) expect(next.has(id)).toBe(true);
+      previous = next;
+    }
     expect(chosenSegments(segments, 50)).toEqual(half);
     expect(chosenSegments([...segments].reverse(), 50)).toEqual(half);
   });
@@ -36,12 +41,47 @@ describe("translation selection", () => {
     ];
     expect(chosenSegments(protectedSegments, 100).size).toBe(100);
   });
-  it("spreads translation over the document", () => {
-    const chosen = chosenSegments(segments, 50);
-    for (let start = 0; start < 100; start += 25)
-      expect(
-        segments.slice(start, start + 25).some((s) => chosen.has(s.id)),
-      ).toBe(true);
+  it.each([
+    [25, "日英英英"],
+    [50, "日英日英"],
+    [75, "日日日英"],
+  ])("distributes Japanese and English at %i percent", (ratio, pattern) => {
+    const chosen = chosenSegments(segments, ratio);
+    expect(segments.map((s) => (chosen.has(s.id) ? "日" : "英")).join("")).toBe(
+      pattern.repeat(25),
+    );
+  });
+  it("alternates an odd number of eligible sentences without counting code or Japanese", () => {
+    const mixed = orderSegments([
+      ...makeSegments("The first sentence.", 0),
+      ...makeSegments("日本語です。", 1),
+      ...makeSegments('let value = "hello";', 2, "code"),
+      ...makeSegments(
+        "The second sentence. The third sentence. The fourth sentence. The fifth sentence.",
+        3,
+      ),
+    ]);
+    const chosen = chosenSegments(mixed, 50);
+    expect([...chosen].sort()).toEqual(["b0s0", "b3s1", "b3s3"]);
+  });
+  it("uses document order independently of IDs and leaves the source unchanged", () => {
+    const renamed = segments.map((s, i) => ({
+      ...s,
+      id: `sentence-${100 - i}`,
+    }));
+    const original = structuredClone(renamed);
+    const chosen = chosenSegments([...renamed].reverse(), 50);
+    expect(renamed.slice(0, 8).map((s) => chosen.has(s.id))).toEqual([
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+    ]);
+    expect(renamed).toEqual(original);
   });
 });
 describe("source fidelity", () => {
