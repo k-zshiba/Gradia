@@ -13,7 +13,7 @@ npm ci
 npm run desktop
 ```
 
-画面だけのプレビューは`npm run dev`または`Start-Preview.cmd`です。プレビューはサンプル表示専用で、資料保存・翻訳・AIへの質問はデスクトップ版で行います。`index.html`の直開きでは起動しません。
+画面だけをプレビューする場合は`npm run dev`または`Start-Preview.cmd`を使います。プレビューはサンプル表示専用です。資料保存・翻訳・AIへの質問はデスクトップ版で行います。`index.html`を直接開いてもアプリは起動しません。
 
 この作業環境にあるローカルRust/npmを使う場合は`powershell -ExecutionPolicy Bypass -File scripts/desktop.ps1`で起動できます。
 
@@ -33,23 +33,23 @@ cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets
 
 通常CIは署名鍵を使用せず、`npm run package:unsigned`でインストーラーの生成まで確認します。本番の署名付き配布はタグ用ワークフローで行います。成果物の場所は`src-tauri/target/release/bundle/nsis/`です。
 
-テストの一時出力は`.tools/playwright-results/`、明示的な画像・JSON結果は`test-results/`です。原本・モデル・資格情報・テスト結果・ビルド生成物はコミットしません。
+テストの一時出力は`.tools/playwright-results/`に、検証で明示的に保存する画像・JSONの結果は`test-results/`に保存します。原本・モデル・資格情報・テスト結果・ビルド生成物はコミットしません。
 
 ## 実サービスとの結合確認
 
 - `scripts/probe-translation.mjs`: `.tools/llama/`と`.tools/models/`を利用する実翻訳プローブ。
 - `scripts/probe-native.mjs`: 起動済みのViteとdebug版`gradia.exe`を使用し、専用保存先で翻訳・保存・再起動を確認。
 - `scripts/probe-materials.mjs`: 専用保存先でPDF原本・Monaco・Web抽出・中断を確認。
-- 上記プローブは、翻訳サーバーの認証なし要求の拒否とプライベートWeb取得の拒否も確認します。
+- 上記プローブでは、翻訳サーバーが認証なしの要求を拒否することと、プライベートWeb取得を拒否することも確認します。
 - `scripts/probe-codex.mjs`: ローカル模擬サーバーとのプロトコル確認。OpenAIへの推論要求は行わない。
 - `scripts/probe-live-chat.mjs`: 接続済みインストール版のWebView2デバッグポート9224で、本人の契約枠による実回答を確認。開発者が明示的に実行する。
 
 通常の起動でWebViewデバッグポートやテスト用保存先は指定しません。検証履歴は[verification.md](verification.md)に記載します。
 
-## 仕様上の境界
+## 対応範囲と上限
 
 UTF-8コード/テキストは5 MB、PDFは100 MB、HTMLは10 MB以下、フォルダーは2000ファイル未満です。OCR、コード編集・実行、ログイン必須ページ、クラウド同期は対象外です。
 
-PDFの読順や図・複雑な表・数式は抽出だけで保証せず、原本ページへの移動で補います。Monacoでコメントを安全に分類できない言語は翻訳対象にしません。
+PDFの読順や図・複雑な表・数式は抽出だけでは保証せず、原本ページに移動して確認できるようにしています。Monacoでコメントを安全に分類できない言語は翻訳対象にしません。
 
 公式資料: [Tauri](https://v2.tauri.app/)、[PDF.js](https://mozilla.github.io/pdf.js/)、[Tauri Updater](https://v2.tauri.app/plugin/updater/)、[Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source)、[Codex app-server](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server)。
