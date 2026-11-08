@@ -9,7 +9,7 @@ flowchart LR
   User["ユーザー"] --> UI["React / TypeScript<br/>資料一覧・閲覧・AIチャット"]
   Code["ソースコード"] --> Monaco["Monaco<br/>構文・コメント分類"]
   PDF["文字入りPDF"] --> PDFJS["PDF.js<br/>本文抽出・原本描画"]
-  Web["公開Webページ"] --> Fetch["Rust HTTP取得"]
+  Web["公開Webページ"] --> Fetch["Rust HTTP取得<br/>DNS・転送先検査 / 接続先固定"]
   Fetch --> Readability["Readability / DOMPurify<br/>本文抽出・サニタイズ"]
   Monaco --> Docs["Document → Segment<br/>原文・順序・ページ/行"]
   PDFJS --> Docs
@@ -18,7 +18,7 @@ flowchart LR
   UI <-->|"Tauri invoke / study-jobイベント"| Rust["Rust / Tokio<br/>資料・翻訳・会話ジョブ"]
   Rust <--> DB[("SQLite<br/>資料の版・訳文・設定・履歴")]
   Rust <--> Files["ローカルファイル<br/>原本スナップショット / モデル"]
-  Rust --> Llama["llama-server 子プロセス<br/>127.0.0.1 / PLaMo"]
+  Rust --> Llama["llama-server 子プロセス<br/>127.0.0.1 / 起動ごとの認証 / PLaMo"]
   Rust --> Codex["Codex app-server 子プロセス<br/>stdio / アプリ専用データ"]
   Codex --> Gate["127.0.0.1 通信ゲート<br/>ツール除外 / 契約枠トークン付与"]
   Gate --> OpenAI["OpenAI Responses<br/>ChatGPT契約枠"]
@@ -140,6 +140,7 @@ flowchart TB
 | `src/UpdateControl.tsx` / `updater.ts` | 更新確認と同意、進捗                  |
 | `src-tauri/src/updates.rs`             | Release API・配布物の解決と版の検査    |
 | `src-tauri/src/files.rs` / `store.rs`  | 原本・版・SQLite                      |
+| `src-tauri/src/web.rs`                 | 公開IP検査・DNS固定・転送と受信量制限  |
 | `src-tauri/src/translation.rs`         | PLaMo子プロセスとキャッシュ           |
 | `src-tauri/src/auth.rs` / `codex.rs`   | OAuth・DPAPI・Codex・ゲート           |
 | `src-tauri/src/lib.rs`                 | IPC登録、ジョブ管理、更新前の終了処理 |

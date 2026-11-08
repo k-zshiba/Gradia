@@ -28,6 +28,7 @@ npm run test:e2e
 npm run build
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 cargo test --locked --manifest-path src-tauri/Cargo.toml
+cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets
 ```
 
 通常CIは署名鍵を使用せず、`npm run package:unsigned`でインストーラーの生成まで確認します。本番の署名付き配布はタグ用ワークフローで行います。成果物の場所は`src-tauri/target/release/bundle/nsis/`です。
@@ -39,6 +40,7 @@ cargo test --locked --manifest-path src-tauri/Cargo.toml
 - `scripts/probe-translation.mjs`: `.tools/llama/`と`.tools/models/`を利用する実翻訳プローブ。
 - `scripts/probe-native.mjs`: 起動済みのViteとdebug版`gradia.exe`を使用し、専用保存先で翻訳・保存・再起動を確認。
 - `scripts/probe-materials.mjs`: 専用保存先でPDF原本・Monaco・Web抽出・中断を確認。
+- 上記プローブは、翻訳サーバーの認証なし要求の拒否とプライベートWeb取得の拒否も確認します。
 - `scripts/probe-codex.mjs`: ローカル模擬サーバーとのプロトコル確認。OpenAIへの推論要求は行わない。
 - `scripts/probe-live-chat.mjs`: 接続済みインストール版のWebView2デバッグポート9224で、本人の契約枠による実回答を確認。開発者が明示的に実行する。
 
