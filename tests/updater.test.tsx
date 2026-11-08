@@ -50,7 +50,7 @@ describe("update consent", () => {
     expect(await screen.findByText("0.3.0")).toBeTruthy();
     expect(mocks.install).not.toHaveBeenCalled();
     await userEvent.click(
-      screen.getByRole("button", { name: "今は更新しない" }),
+      await screen.findByRole("button", { name: "今は更新しない" }),
     );
     expect(update.close).toHaveBeenCalledOnce();
     expect(mocks.install).not.toHaveBeenCalled();
