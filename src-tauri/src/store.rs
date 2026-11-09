@@ -27,16 +27,7 @@ impl Store {
     pub fn put_document(&self, doc: &Document, project: Option<&str>) -> Result<()> {
         let mut db = self.0.lock().map_err(|e| e.to_string())?;
         let tx = db.transaction().map_err(|e| e.to_string())?;
-        tx.execute(
-            "INSERT OR IGNORE INTO documents VALUES(?1,?2,?3,?4)",
-            params![
-                doc.id,
-                doc.revision,
-                serde_json::to_string(doc).map_err(|e| e.to_string())?,
-                doc.created_at
-            ],
-        )
-        .map_err(|e| e.to_string())?;
+        insert_document(&tx, doc)?;
         if let Some(project) = project {
             tx.execute(
                 "INSERT OR IGNORE INTO project_documents VALUES(?1,?2,?3)",
@@ -70,6 +61,13 @@ impl Store {
             })
         })
         .collect()
+    }
+    pub fn upgrade_document(&self, document: &Document, previous_revision: &str) -> Result<()> {
+        let mut db = self.0.lock().map_err(|e| e.to_string())?;
+        let tx = db.transaction().map_err(|e| e.to_string())?;
+        insert_document(&tx, document)?;
+        tx.execute("INSERT OR IGNORE INTO project_documents(project,doc,revision) SELECT project,doc,?3 FROM project_documents WHERE doc=?1 AND revision=?2", params![document.id, previous_revision, document.revision]).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())
     }
     pub fn create_project(&self, name: &str) -> Result<Project> {
         let name = project_name(name)?;
@@ -315,6 +313,21 @@ impl Store {
     }
 }
 
+fn insert_document(connection: &Connection, document: &Document) -> Result<()> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO documents(id,revision,data,created) VALUES(?1,?2,?3,?4)",
+            params![
+                document.id,
+                document.revision,
+                serde_json::to_string(document).map_err(|e| e.to_string())?,
+                document.created_at
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn project_name(name: &str) -> Result<String> {
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 80 || name.chars().any(char::is_control) {
@@ -478,5 +491,50 @@ mod tests {
         let mixed = s.document("source", "v1").unwrap();
         assert!(!mixed.bilingual);
         assert_eq!(mixed.ratio, 50);
+    }
+    #[test]
+    fn upgrading_markdown_retains_old_conversations_and_project_memberships() {
+        let s = Store::open(Path::new(":memory:")).unwrap();
+        let project = s.create_project("Reading").unwrap();
+        let original = document("v1");
+        s.put_document(&original, Some(&project.id)).unwrap();
+        s.save_message(
+            &original.id,
+            &original.revision,
+            &ChatMessage {
+                id: "old-question".into(),
+                role: "user".into(),
+                text: "Original question".into(),
+                status: "completed".into(),
+                references: vec![],
+                created_at: 1,
+            },
+        )
+        .unwrap();
+        let mut preview = original.clone();
+        preview.language = Some("markdown".into());
+        preview.revision = "markdown-v1".into();
+        s.upgrade_document(&preview, "v1").unwrap();
+        assert_eq!(s.list().unwrap().len(), 2);
+        assert_eq!(
+            s.document("source", "v1").unwrap().content,
+            "Original text."
+        );
+        assert_eq!(
+            s.history("source", "v1").unwrap()[0].text,
+            "Original question"
+        );
+        assert!(s.history("source", "markdown-v1").unwrap().is_empty());
+        assert_eq!(
+            s.projects().unwrap()[0].document_keys,
+            vec!["source:markdown-v1", "source:v1"]
+        );
+        s.preference("source", "markdown-v1", 75, None, true)
+            .unwrap();
+        s.upgrade_document(&preview, "v1").unwrap();
+        let saved = s.document("source", "markdown-v1").unwrap();
+        assert_eq!(saved.ratio, 75);
+        assert!(saved.bilingual);
+        assert_eq!(s.list().unwrap().len(), 2);
     }
 }

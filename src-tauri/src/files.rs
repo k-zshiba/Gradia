@@ -49,7 +49,7 @@ pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<Value
         return Err("コード・テキストは5 MB以下にしてください".into());
     }
     Ok(
-        json!({"path":source,"name":name,"kind":if ["txt","md","rst"].contains(&ext.as_str()){"text"}else{"code"},"content":text}),
+        json!({"path":source,"name":name,"kind":if ["txt","md","markdown","rst"].contains(&ext.as_str()){"text"}else{"code"},"content":text}),
     )
 }
 #[tauri::command]
@@ -80,7 +80,8 @@ pub async fn list_folder(path: String) -> Result<Vec<String>> {
                 .to_ascii_lowercase();
             if [
                 "rs", "py", "js", "jsx", "ts", "tsx", "c", "h", "cpp", "hpp", "cc", "java", "go",
-                "cs", "json", "html", "css", "sh", "md", "toml", "yaml", "yml", "txt", "pdf",
+                "cs", "json", "html", "css", "sh", "md", "markdown", "toml", "yaml", "yml", "txt",
+                "pdf",
             ]
             .contains(&ext.as_str())
             {
@@ -102,6 +103,34 @@ pub async fn list_folder(path: String) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn changed_markdown_segmentation_creates_a_separate_revision() {
+        let segment = Segment {
+            id: "m0s0".into(),
+            block: 0,
+            order: 0,
+            text: "Read the value.".into(),
+            kind: "paragraph".into(),
+            eligible: true,
+            location: json!({"line":1,"endLine":1}),
+        };
+        let original =
+            markdown_revision("Read the value.", std::slice::from_ref(&segment)).unwrap();
+        assert_ne!(original, digest(b"Read the value."));
+        assert_eq!(
+            original,
+            markdown_revision("Read the value.", std::slice::from_ref(&segment)).unwrap()
+        );
+        let changed = Segment {
+            text: "Changed extraction.".into(),
+            ..segment
+        };
+        assert_ne!(
+            original,
+            markdown_revision("Read the value.", &[changed]).unwrap()
+        );
+    }
 
     #[tokio::test]
     async fn folder_import_finds_nested_materials_but_excludes_dependencies_and_binary_assets() {
@@ -162,13 +191,7 @@ pub async fn save_document(
     project_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Document> {
-    if document.segments.len() > 100_000 {
-        return Err("文の数が多すぎます".into());
-    }
-    let mut seen = std::collections::HashSet::new();
-    if document.segments.iter().any(|s| !seen.insert(&s.id)) {
-        return Err("文IDが重複しています".into());
-    }
+    validate_segments(&document.segments)?;
     document.id = digest(document.source.as_bytes())[..24].to_string();
     document.revision = if document.kind == "web" {
         digest(
@@ -185,8 +208,74 @@ pub async fn save_document(
             .cloned()
             .ok_or("ファイルを再選択してください")?
     };
+    if document.kind == "text" && document.language.as_deref() == Some("markdown") {
+        document.revision = markdown_revision(&document.content, &document.segments)?;
+    }
     document.created_at = now();
     state.store.put_document(&document, project_id.as_deref())?;
+    state.store.document(&document.id, &document.revision)
+}
+
+fn validate_segments(segments: &[Segment]) -> Result<()> {
+    if segments.len() > 100_000 {
+        return Err("文の数が多すぎます".into());
+    }
+    let mut seen = std::collections::HashSet::new();
+    if segments.iter().any(|s| !seen.insert(&s.id)) {
+        return Err("文IDが重複しています".into());
+    }
+    Ok(())
+}
+
+fn markdown_revision(content: &str, segments: &[Segment]) -> Result<String> {
+    // Reusing the old file hash would attach old conversations to different sentence IDs.
+    let snapshot =
+        serde_json::to_vec(&("markdown-v1", content, segments)).map_err(|e| e.to_string())?;
+    Ok(digest(&snapshot))
+}
+
+#[tauri::command]
+pub fn upgrade_markdown(
+    id: String,
+    revision: String,
+    segments: Vec<Segment>,
+    state: State<'_, AppState>,
+) -> Result<Document> {
+    let mut document = state.store.document(&id, &revision)?;
+    let extension = std::path::Path::new(&document.source)
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    if document.kind != "text" || !["md", "markdown"].contains(&extension.as_str()) {
+        return Err("Markdown資料を選択してください".into());
+    }
+    validate_segments(&segments)?;
+    let old_position = document
+        .segments
+        .iter()
+        .find(|s| Some(&s.id) == document.position.as_ref())
+        .and_then(|s| s.location["line"].as_u64());
+    document.language = Some("markdown".into());
+    document.revision = markdown_revision(&document.content, &segments)?;
+    document.segments = segments;
+    document.position = old_position.and_then(|line| {
+        document
+            .segments
+            .iter()
+            .min_by_key(|s| {
+                let start = s.location["line"].as_u64().unwrap_or(1);
+                let end = s.location["endLine"].as_u64().unwrap_or(start);
+                if line < start {
+                    start - line
+                } else {
+                    line.saturating_sub(end)
+                }
+            })
+            .map(|s| s.id.clone())
+    });
+    document.created_at = now();
+    state.store.upgrade_document(&document, &revision)?;
     state.store.document(&document.id, &document.revision)
 }
 #[tauri::command]
