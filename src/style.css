@@ -498,6 +498,7 @@ small {
   transform: translateX(12px);
 }
 .bilingual-translation {
+  display: block;
   margin: 8px 0 15px;
   padding: 8px 12px;
   border-left: 2px solid #91a87d;
@@ -714,6 +715,143 @@ small {
   overflow-x: auto;
   color: #5b7155;
   margin: 20px 0 28px;
+}
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  font-family: "Segoe UI", "Yu Gothic UI", sans-serif;
+  line-height: 1.5;
+  color: #354b35;
+  margin: 26px 0 14px;
+}
+.markdown-preview h1 {
+  font-size: 27px;
+}
+.markdown-preview h2 {
+  font-size: 23px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+.markdown-preview h3 {
+  font-size: 19px;
+}
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  font-size: 16px;
+}
+.markdown-preview p {
+  margin: 0 0 14px;
+}
+.markdown-preview ul,
+.markdown-preview ol {
+  padding-left: 26px;
+  margin: 12px 0;
+}
+.markdown-preview li > p {
+  margin: 5px 0;
+}
+.markdown-preview li input {
+  margin-right: 8px;
+}
+.markdown-preview blockquote {
+  margin: 18px 0;
+  padding: 3px 18px;
+  border-left: 3px solid #9eaf91;
+  color: #66785e;
+  background: #f7f8f1;
+}
+.markdown-preview .segment.list {
+  padding-left: 0;
+}
+.markdown-preview .segment.list:before {
+  display: none;
+}
+.markdown-preview .segment.heading {
+  margin-top: 0;
+}
+.markdown-preview .segment.bilingual {
+  display: block;
+  margin-bottom: 12px;
+}
+.markdown-preview .segment.translated {
+  margin-left: 0;
+  padding-left: 5px;
+}
+.markdown-preview .original-toggle {
+  position: static;
+  margin: 0 4px;
+  vertical-align: middle;
+}
+.markdown-preview .segment .original-toggle {
+  opacity: 0.6;
+}
+.markdown-preview .bilingual-translation {
+  font-family: "Segoe UI", "Yu Gothic UI", sans-serif;
+}
+.markdown-table {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 20px 0;
+}
+.markdown-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.markdown-table th,
+.markdown-table td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+  min-width: 110px;
+}
+.markdown-table th {
+  background: #eef2e6;
+  font-weight: 600;
+}
+.markdown-table tr:nth-child(even) {
+  background: #fafbf5;
+}
+.markdown-preview hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 25px 0;
+}
+.markdown-image-placeholder {
+  display: inline-block;
+  padding: 8px 12px;
+  border: 1px dashed #b4bea9;
+  color: #79896c;
+  border-radius: 5px;
+  font:
+    12px "Segoe UI",
+    "Yu Gothic UI",
+    sans-serif;
+}
+.markdown-local-link {
+  text-decoration: underline dotted;
+}
+.markdown-footnote {
+  font-size: 12px;
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.markdown-upgrade {
+  padding: 14px;
+  margin-bottom: 20px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f5f7ec;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.markdown-upgrade p {
+  margin-bottom: 10px;
 }
 .original-toggle {
   position: absolute;

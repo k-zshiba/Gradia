@@ -12,6 +12,7 @@ import {
   extractText,
 } from "./core";
 import type { LocalFile, Segment, Document } from "./types";
+import { isMarkdownPath, parseMarkdown } from "./markdown";
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
 self.MonacoEnvironment = { getWorker: () => new editorWorker() };
@@ -257,6 +258,13 @@ export async function importFile(
     };
   if (file.kind === "code")
     return { ...common, ...(await extractCode(common.content, file.path)) };
+  if (isMarkdownPath(file.path))
+    return {
+      ...common,
+      language: "markdown",
+      segments: parseMarkdown(common.content).segments,
+      warnings: [],
+    };
   const segments = extractText(common.content);
   return { ...common, segments, warnings: [] };
 }

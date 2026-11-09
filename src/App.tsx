@@ -37,6 +37,9 @@ import { chosenSegments, selectReferences, sourceLabel } from "./core";
 import { extractWeb } from "./importers";
 import { importLocalFiles, type ImportResult } from "./library";
 import { ProjectControls } from "./ProjectControls";
+import { isMarkdownPath, matchesMarkdown, parseMarkdown } from "./markdown";
+import { MarkdownPreview } from "./MarkdownPreview";
+import { SegmentView, type SegmentDisplay } from "./SegmentView";
 import {
   CodeViewer,
   InlineText,
@@ -294,8 +297,25 @@ export default function App() {
   useEffect(() => {
     messageEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
+  const parsedMarkdown = useMemo(
+    () =>
+      doc?.kind === "text" && isMarkdownPath(doc.source)
+        ? parseMarkdown(doc.content)
+        : null,
+    [doc?.id, doc?.revision, doc?.content],
+  );
+  const markdown = useMemo(
+    () =>
+      doc?.language === "markdown" &&
+      parsedMarkdown &&
+      matchesMarkdown(parsedMarkdown, doc.segments)
+        ? parsedMarkdown
+        : null,
+    [parsedMarkdown, doc?.segments, doc?.language],
+  );
   const pages = useMemo(() => {
     if (!doc) return [[]] as Segment[][];
+    if (markdown) return markdown.pages;
     if (doc.kind === "code") return [doc.segments];
     if (doc.kind === "pdf") {
       const groups = new Map<number, Segment[]>();
@@ -309,7 +329,7 @@ export default function App() {
     for (let i = 0; i < doc.segments.length; i += 80)
       groups.push(doc.segments.slice(i, i + 80));
     return groups.length ? groups : [[]];
-  }, [doc?.id, doc?.revision]);
+  }, [doc?.id, doc?.revision, markdown]);
   const shown = pages[Math.min(page, pages.length - 1)] || [];
   const chosen = useMemo(
     () =>
@@ -521,6 +541,27 @@ export default function App() {
       error(e);
     }
   }
+  async function upgradeMarkdown() {
+    if (!doc || !parsedMarkdown) return;
+    setBusy("保存済みMarkdownのプレビュー版を作成しています…");
+    try {
+      const saved = await api.markdown(
+        doc.id,
+        doc.revision,
+        parsedMarkdown.segments,
+      );
+      setDocuments((list) => [
+        saved,
+        ...list.filter((d) => key(d) !== key(saved)),
+      ]);
+      setProjects(await api.projects());
+      setActiveKey(key(saved));
+    } catch (e) {
+      error(e);
+    } finally {
+      setBusy("");
+    }
+  }
   async function selectFolder() {
     try {
       const path = await open({ directory: true, multiple: false });
@@ -653,6 +694,20 @@ export default function App() {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", done);
   }
+  const segmentDisplay: SegmentDisplay = {
+    chosen,
+    translations,
+    bilingual: !!doc?.bilingual,
+    peek,
+    selection,
+    onPeek: (id) =>
+      setPeek((previous) => {
+        const next = new Set(previous);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }),
+  };
   const filteredDocuments = projectDocuments.filter((d) =>
     `${d.title} ${d.source}`.toLowerCase().includes(filter.toLowerCase()),
   );
@@ -679,7 +734,7 @@ export default function App() {
           <small>
             {d.id === "sample"
               ? "操作サンプル"
-              : `${d.kind.toUpperCase()} · ${new Date(d.createdAt).toLocaleDateString("ja-JP")}`}
+              : `${d.language === "markdown" ? "MARKDOWN" : d.kind.toUpperCase()} · ${new Date(d.createdAt).toLocaleDateString("ja-JP")}`}
             {d.bilingual
               ? " · 英日併記"
               : d.ratio > 0 && ` · 日本語 ${d.ratio}%`}
@@ -1096,7 +1151,9 @@ export default function App() {
                     <span>
                       {doc.id === "sample"
                         ? "GETTING STARTED"
-                        : doc.kind.toUpperCase()}
+                        : doc.language === "markdown"
+                          ? "MARKDOWN"
+                          : doc.kind.toUpperCase()}
                     </span>
                     <span>
                       {doc.id === "sample"
@@ -1144,99 +1201,67 @@ export default function App() {
                       reveal={reveal}
                     />
                   )}
+                  {parsedMarkdown && !markdown && (
+                    <div className="markdown-upgrade">
+                      <p>
+                        この資料は以前の表示形式で保存されています。プレビュー用の新しい版を作成すると、見出しや表を整形して翻訳できます。過去の版と会話は残ります。
+                      </p>
+                      <button
+                        disabled={!!busy || !desktop}
+                        onClick={() => void upgradeMarkdown()}
+                      >
+                        Markdownプレビューに更新
+                      </button>
+                    </div>
+                  )}
                   <div className="prose">
-                    {shown
-                      .filter(
-                        (s) => doc.kind !== "code" || s.kind === "comment",
-                      )
-                      .map((s) => {
-                        const t = translations[s.id];
-                        const translated =
-                          chosen.has(s.id) &&
-                          t?.status === "ready" &&
-                          !peek.has(s.id);
-                        const text =
-                          !doc.bilingual && translated ? t.text : s.text;
-                        return (
-                          <div
-                            id={`segment-${s.id}`}
-                            data-segment={s.id}
-                            data-translated={translated ? "true" : "false"}
+                    {markdown ? (
+                      <MarkdownPreview
+                        document={markdown}
+                        visible={shown}
+                        display={segmentDisplay}
+                        onJump={jump}
+                        onError={error}
+                      />
+                    ) : (
+                      shown
+                        .filter(
+                          (s) => doc.kind !== "code" || s.kind === "comment",
+                        )
+                        .map((s) => (
+                          <SegmentView
                             key={s.id}
-                            className={`segment ${s.kind} ${translated && !doc.bilingual ? "translated" : ""} ${doc.bilingual && s.eligible ? "bilingual" : ""} ${selection.includes(s.id) ? "selected" : ""}`}
-                          >
-                            {s.kind === "comment" && (
-                              <button
-                                className="line-label"
-                                onClick={() => setReveal(s.location.line)}
-                              >
-                                {sourceLabel(s)}
-                              </button>
+                            segment={s}
+                            display={segmentDisplay}
+                            render={(text) => (
+                              <>
+                                {s.kind === "comment" && (
+                                  <button
+                                    className="line-label"
+                                    onClick={() => setReveal(s.location.line)}
+                                  >
+                                    {sourceLabel(s)}
+                                  </button>
+                                )}
+                                {s.kind === "code" ? (
+                                  <pre>{s.text}</pre>
+                                ) : s.kind === "heading" ? (
+                                  <h2>
+                                    <InlineText text={text} />
+                                  </h2>
+                                ) : (
+                                  <p>
+                                    <InlineText text={text} />
+                                  </p>
+                                )}
+                              </>
                             )}
-                            {s.kind === "code" ? (
-                              <pre>{s.text}</pre>
-                            ) : s.kind === "heading" ? (
-                              <h2>
-                                <InlineText text={text} />
-                              </h2>
-                            ) : (
-                              <p>
-                                <InlineText text={text} />
-                              </p>
+                            renderTranslation={(text) => (
+                              <InlineText text={text} />
                             )}
-                            {doc.bilingual &&
-                              s.eligible &&
-                              t?.status === "ready" && (
-                                <div
-                                  className="bilingual-translation"
-                                  lang="ja"
-                                >
-                                  <span className="translation-label">
-                                    日本語
-                                  </span>
-                                  <InlineText text={t.text} />
-                                </div>
-                              )}
-                            {!doc.bilingual &&
-                              chosen.has(s.id) &&
-                              t?.status === "ready" && (
-                                <button
-                                  className="original-toggle"
-                                  onClick={() =>
-                                    setPeek((previous) => {
-                                      const next = new Set(previous);
-                                      if (next.has(s.id)) next.delete(s.id);
-                                      else next.add(s.id);
-                                      return next;
-                                    })
-                                  }
-                                >
-                                  {peek.has(s.id) ? "訳文" : "原文"}
-                                </button>
-                              )}
-                            {chosen.has(s.id) && t?.status === "failed" && (
-                              <small
-                                className="translation-error"
-                                title={t.error}
-                              >
-                                翻訳失敗 · 原文を表示
-                              </small>
-                            )}
-                            {chosen.has(s.id) &&
-                              (!t || t.status === "pending") &&
-                              (doc.bilingual ? (
-                                <small className="bilingual-waiting">
-                                  日本語訳を準備中
-                                </small>
-                              ) : (
-                                <span
-                                  className="pending-mark"
-                                  title="翻訳待ち"
-                                />
-                              ))}
-                          </div>
-                        );
-                      })}
+                          />
+                        ))
+                    )}
                   </div>
                   {!doc.segments.length && (
                     <div className="empty-document">
