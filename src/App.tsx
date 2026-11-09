@@ -299,7 +299,7 @@ export default function App() {
   }, [messages]);
   const parsedMarkdown = useMemo(
     () =>
-      doc?.kind === "text" && isMarkdownPath(doc.source)
+      doc && ["text", "code"].includes(doc.kind) && isMarkdownPath(doc.source)
         ? parseMarkdown(doc.content)
         : null,
     [doc?.id, doc?.revision, doc?.content],

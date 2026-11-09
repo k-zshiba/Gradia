@@ -218,6 +218,36 @@ try {
     path: "test-results/markdown-preview.png",
     fullPage: true,
   });
+  const legacyCode = join(root, "legacy.markdown");
+  await writeFile(legacyCode, "# Legacy extension\n\nRead the saved text.\n");
+  await page.evaluate(async (path) => {
+    const { api } = await import("/src/api.ts");
+    const { extractText } = await import("/src/core.ts");
+    const { parseMarkdown } = await import("/src/markdown.ts");
+    const file = await api.read(path);
+    const old = await api.save({
+      title: file.name,
+      source: file.path,
+      kind: "code",
+      language: "plaintext",
+      content: file.content,
+      segments: extractText(file.content),
+      warnings: [],
+      ratio: 0,
+      position: null,
+    });
+    const upgraded = await api.markdown(
+      old.id,
+      old.revision,
+      parseMarkdown(file.content).segments,
+    );
+    if (
+      upgraded.kind !== "text" ||
+      upgraded.language !== "markdown" ||
+      upgraded.revision === old.revision
+    )
+      throw new Error("Legacy .markdown code document was not upgraded safely");
+  }, legacyCode);
   await stop();
   page = await launch();
   await expect(page.locator(".markdown-preview table")).toBeVisible();

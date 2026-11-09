@@ -247,7 +247,9 @@ pub fn upgrade_markdown(
         .unwrap_or_default()
         .to_string_lossy()
         .to_ascii_lowercase();
-    if document.kind != "text" || !["md", "markdown"].contains(&extension.as_str()) {
+    if !["text", "code"].contains(&document.kind.as_str())
+        || !["md", "markdown"].contains(&extension.as_str())
+    {
         return Err("Markdown資料を選択してください".into());
     }
     validate_segments(&segments)?;
@@ -256,6 +258,7 @@ pub fn upgrade_markdown(
         .iter()
         .find(|s| Some(&s.id) == document.position.as_ref())
         .and_then(|s| s.location["line"].as_u64());
+    document.kind = "text".into();
     document.language = Some("markdown".into());
     document.revision = markdown_revision(&document.content, &segments)?;
     document.segments = segments;
