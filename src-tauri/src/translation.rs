@@ -38,16 +38,81 @@ pub fn check_model_stamp(state: &AppState) -> Result<String> {
 }
 pub fn protect(text: &str) -> (String, Vec<String>) {
     static LITERALS: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r"`[^`\n]*`|\$[^$\n]+\$|https?://[^\s)]+").expect("valid literal pattern")
+        regex::Regex::new(r"\$[^$\n]+\$|https?://[^\s)]+|\[\^[^\]\n]+\]|<[^>\n]+>|\*\*|__|~~|!\[|\[|[*_]|\\[\\`*_{}\[\]()#+.!~<>-]").expect("valid literal pattern")
     });
+    let mut ranges: Vec<_> = LITERALS.find_iter(text).map(|m| m.range()).collect();
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let escaped = bytes[..i].iter().rev().take_while(|&&b| b == b'\\').count() % 2 == 1;
+        if bytes[i] == b'`' && !escaped {
+            let length = bytes[i..].iter().take_while(|&&b| b == b'`').count();
+            let mut j = i + length;
+            while j < bytes.len() {
+                if bytes[j] == b'`' {
+                    let closing = bytes[j..].iter().take_while(|&&b| b == b'`').count();
+                    if closing == length {
+                        ranges.push(i..j + closing);
+                        i = j + closing - 1;
+                        break;
+                    }
+                    j += closing;
+                } else {
+                    j += 1;
+                }
+            }
+        } else if bytes[i..].starts_with(b"](") && !escaped {
+            let mut depth = 1;
+            let mut j = i + 2;
+            let mut angle = false;
+            let mut quote = None;
+            while j < bytes.len() {
+                let b = bytes[j];
+                if b == b'\\' {
+                    j += 2;
+                    continue;
+                }
+                if let Some(q) = quote {
+                    if b == q {
+                        quote = None;
+                    }
+                } else if angle {
+                    if b == b'>' {
+                        angle = false;
+                    }
+                } else if b == b'<' {
+                    angle = true;
+                } else if (b == b'\'' || b == b'"') && bytes[j - 1].is_ascii_whitespace() {
+                    quote = Some(b);
+                } else if b == b'(' {
+                    depth += 1;
+                } else if b == b')' {
+                    depth -= 1;
+                    if depth == 0 {
+                        ranges.push(i..j + 1);
+                        i = j;
+                        break;
+                    }
+                }
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+    ranges.sort_by_key(|range| (range.start, std::cmp::Reverse(range.end)));
     let mut saved = Vec::new();
-    let masked = LITERALS
-        .replace_all(text, |m: &regex::Captures<'_>| {
-            let id = saved.len();
-            saved.push(m[0].to_string());
-            format!("⟦KEEP_{id}⟧")
-        })
-        .into_owned();
+    let mut masked = String::new();
+    let mut cursor = 0;
+    for range in ranges {
+        if range.start < cursor {
+            continue;
+        }
+        masked.push_str(&text[cursor..range.start]);
+        masked.push_str(&format!("⟦KEEP_{}⟧", saved.len()));
+        saved.push(text[range.clone()].to_string());
+        cursor = range.end;
+    }
+    masked.push_str(&text[cursor..]);
     (masked, saved)
 }
 pub fn restore(text: &str, saved: &[String]) -> Result<String> {
@@ -65,6 +130,9 @@ pub fn restore(text: &str, saved: &[String]) -> Result<String> {
     Ok(out)
 }
 pub fn prompt(text: &str, context: &str) -> Result<(String, Vec<String>)> {
+    if text.len() > 56_000 || text.chars().count() > 14_000 {
+        return Err("この文は長すぎるため翻訳できません".into());
+    }
     if text.contains("<|plamo:") || context.contains("<|plamo:") {
         return Err("翻訳モデルの制御記号を含む文は翻訳できません".into());
     }
@@ -321,6 +389,35 @@ mod tests {
         let (masked, s) = protect("Use `foo.bar()` and $x^2$.");
         assert_eq!(restore(&masked, &s).unwrap(), "Use `foo.bar()` and $x^2$.");
         assert!(restore("失われた記号", &s).is_err());
+    }
+    #[test]
+    fn markdown_formatting_multibacktick_code_and_relative_link_targets_survive_translation() {
+        let input = "Read **safe** code ``a`b`` and [Docs](../guide_(intro).md \"Local (guide)\").";
+        let (masked, saved) = protect(input);
+        assert_eq!(
+            saved,
+            vec![
+                "**",
+                "**",
+                "``a`b``",
+                "[",
+                "](../guide_(intro).md \"Local (guide)\")"
+            ]
+        );
+        assert!(!masked.contains("a`b"));
+        assert!(!masked.contains("guide_"));
+        let translated = "⟦KEEP_0⟧安全な⟦KEEP_1⟧コード⟦KEEP_2⟧と⟦KEEP_3⟧資料⟦KEEP_4⟧を読みます。";
+        assert_eq!(
+            restore(translated, &saved).unwrap(),
+            "**安全な**コード``a`b``と[資料](../guide_(intro).md \"Local (guide)\")を読みます。"
+        );
+        assert!(restore("⟦KEEP_0⟧失われた書式", &saved).is_err());
+    }
+    #[test]
+    fn rejects_oversized_prose_before_scanning_markdown() {
+        assert!(prompt(&"](".repeat(30_000), "")
+            .unwrap_err()
+            .contains("長すぎる"));
     }
     #[test]
     fn rejects_control_tokens() {

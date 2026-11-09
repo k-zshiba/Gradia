@@ -204,6 +204,7 @@ pub fn run() {
             files::list_folder,
             files::fetch_page,
             files::save_document,
+            files::upgrade_markdown,
             files::read_snapshot,
             files::open_url,
             save_preference,

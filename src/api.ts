@@ -28,6 +28,8 @@ export const api = {
     projectId: string | null = null,
   ) => call<Document>("save_document", { document, projectId }),
   projects: () => call<Project[]>("list_projects"),
+  markdown: (id: string, revision: string, segments: Document["segments"]) =>
+    call<Document>("upgrade_markdown", { id, revision, segments }),
   createProject: (name: string) => call<Project>("create_project", { name }),
   renameProject: (id: string, name: string) =>
     call<void>("rename_project", { id, name }),
