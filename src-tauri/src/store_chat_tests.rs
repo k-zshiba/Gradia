@@ -14,6 +14,15 @@ fn sessions_keep_messages_and_account_threads_separate_on_the_same_revision() {
     store.put_document(&document("v2"), None).unwrap();
     let first = store.create_session("book", "v1", false).unwrap();
     let second = store.create_session("book", "v1", false).unwrap();
+    store
+        .0
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE chat_sessions SET created=1 WHERE doc='book' AND revision='v1'",
+            [],
+        )
+        .unwrap();
     let other = store.create_session("book", "v2", false).unwrap();
     assert_ne!(first.id, second.id);
     assert_eq!(

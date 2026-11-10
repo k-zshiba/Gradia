@@ -97,7 +97,7 @@ impl Store {
     }
     pub fn sessions(&self, doc: &str, rev: &str) -> Result<Vec<ChatSession>> {
         let db = self.0.lock().map_err(|e| e.to_string())?;
-        let mut q = db.prepare("SELECT id,title,created,updated FROM chat_sessions WHERE doc=?1 AND revision=?2 ORDER BY created,id").map_err(|e|e.to_string())?;
+        let mut q = db.prepare("SELECT id,title,created,updated FROM chat_sessions WHERE doc=?1 AND revision=?2 ORDER BY created,rowid").map_err(|e|e.to_string())?;
         let rows = q
             .query_map(params![doc, rev], row_session)
             .map_err(|e| e.to_string())?;
@@ -108,7 +108,7 @@ impl Store {
         let mut db = self.0.lock().map_err(|e| e.to_string())?;
         let tx = db.transaction().map_err(|e| e.to_string())?;
         let existing = if ensure {
-            tx.query_row("SELECT id,title,created,updated FROM chat_sessions WHERE doc=?1 AND revision=?2 ORDER BY created,id LIMIT 1",params![doc,rev],row_session).optional().map_err(|e|e.to_string())?
+            tx.query_row("SELECT id,title,created,updated FROM chat_sessions WHERE doc=?1 AND revision=?2 ORDER BY created,rowid LIMIT 1",params![doc,rev],row_session).optional().map_err(|e|e.to_string())?
         } else {
             None
         };
