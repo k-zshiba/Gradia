@@ -26,30 +26,33 @@ pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<Value
         .to_string_lossy()
         .to_ascii_lowercase();
     let fingerprint = digest(&bytes);
+    let content = if ext == "pdf" {
+        None
+    } else {
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|_| "UTF-8のテキストファイルに対応しています".to_string())?;
+        if text.contains('\0') {
+            return Err("バイナリファイルは開けません".into());
+        }
+        if text.len() > 5 * 1024 * 1024 {
+            return Err("コード・テキストは5 MB以下にしてください".into());
+        }
+        Some(text)
+    };
     let blob = state.root.join("snapshots").join(&fingerprint);
+    let mut imports = state.imports.lock().await;
     if !blob.exists() {
         tokio::fs::write(&blob, &bytes)
             .await
             .map_err(|e| e.to_string())?;
     }
-    state
-        .imports
-        .lock()
-        .await
-        .insert(source.clone(), fingerprint);
+    imports.insert(source.clone(), fingerprint);
+    drop(imports);
     if ext == "pdf" {
         return Ok(json!({"path":source,"name":name,"kind":"pdf","bytes":bytes}));
     }
-    let text = String::from_utf8(bytes)
-        .map_err(|_| "UTF-8のテキストファイルに対応しています".to_string())?;
-    if text.contains('\0') {
-        return Err("バイナリファイルは開けません".into());
-    }
-    if text.len() > 5 * 1024 * 1024 {
-        return Err("コード・テキストは5 MB以下にしてください".into());
-    }
     Ok(
-        json!({"path":source,"name":name,"kind":if ["txt","md","markdown","rst"].contains(&ext.as_str()){"text"}else{"code"},"content":text}),
+        json!({"path":source,"name":name,"kind":if ["txt","md","markdown","rst"].contains(&ext.as_str()){"text"}else{"code"},"content":content}),
     )
 }
 #[tauri::command]
@@ -191,8 +194,10 @@ pub async fn save_document(
     project_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Document> {
+    let _gate = state.mutation_gate.lock().await;
     validate_segments(&document.segments)?;
     document.id = digest(document.source.as_bytes())[..24].to_string();
+    let mut imports = state.imports.lock().await;
     document.revision = if document.kind == "web" {
         digest(
             serde_json::to_string(&document.segments)
@@ -200,10 +205,7 @@ pub async fn save_document(
                 .as_bytes(),
         )
     } else {
-        state
-            .imports
-            .lock()
-            .await
+        imports
             .get(&document.source)
             .cloned()
             .ok_or("ファイルを再選択してください")?
@@ -213,6 +215,7 @@ pub async fn save_document(
     }
     document.created_at = now();
     state.store.put_document(&document, project_id.as_deref())?;
+    imports.remove(&document.source);
     state.store.document(&document.id, &document.revision)
 }
 
@@ -235,12 +238,13 @@ fn markdown_revision(content: &str, segments: &[Segment]) -> Result<String> {
 }
 
 #[tauri::command]
-pub fn upgrade_markdown(
+pub async fn upgrade_markdown(
     id: String,
     revision: String,
     segments: Vec<Segment>,
     state: State<'_, AppState>,
 ) -> Result<Document> {
+    let _gate = state.mutation_gate.lock().await;
     let mut document = state.store.document(&id, &revision)?;
     let extension = std::path::Path::new(&document.source)
         .extension()
@@ -280,6 +284,49 @@ pub fn upgrade_markdown(
     document.created_at = now();
     state.store.upgrade_document(&document, &revision)?;
     state.store.document(&document.id, &document.revision)
+}
+
+fn snapshot_key(document: &Document) -> Option<String> {
+    if document.kind == "web" {
+        return None;
+    }
+    let key = if document.kind == "pdf" {
+        document.revision.clone()
+    } else {
+        digest(document.content.as_bytes())
+    };
+    (key.len() == 64 && key.bytes().all(|b| b.is_ascii_hexdigit())).then_some(key)
+}
+
+#[tauri::command]
+pub async fn delete_document(
+    id: String,
+    revision: String,
+    all_versions: bool,
+    state: State<'_, AppState>,
+) -> Result<Value> {
+    let _gate = state.mutation_gate.lock().await;
+    state.store.document(&id, &revision)?;
+    state.cancel_and_wait(None).await?;
+    let imports = state.imports.lock().await;
+    let deleted = state.store.delete_document(&id, &revision, all_versions)?;
+    let remaining = state.store.list()?;
+    let mut retained: std::collections::HashSet<String> =
+        remaining.iter().filter_map(snapshot_key).collect();
+    retained.extend(imports.values().cloned());
+    let candidates: std::collections::HashSet<String> =
+        deleted.iter().filter_map(snapshot_key).collect();
+    let mut cleanup_errors = Vec::new();
+    for key in candidates.difference(&retained) {
+        if let Err(error) = tokio::fs::remove_file(state.root.join("snapshots").join(key)).await {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                cleanup_errors.push(error.to_string());
+            }
+        }
+    }
+    Ok(
+        json!({"deleted":deleted.iter().map(|d| json!({"id":d.id,"revision":d.revision})).collect::<Vec<_>>(),"cleanupErrors":cleanup_errors}),
+    )
 }
 #[tauri::command]
 pub async fn read_snapshot(

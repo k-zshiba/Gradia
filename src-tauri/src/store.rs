@@ -143,6 +143,49 @@ impl Store {
             .map_err(|_| "資料が見つかりません".to_string())?;
         serde_json::from_str(&raw).map_err(|e| e.to_string())
     }
+    pub fn delete_document(
+        &self,
+        id: &str,
+        revision: &str,
+        all_versions: bool,
+    ) -> Result<Vec<Document>> {
+        let mut db = self.0.lock().map_err(|e| e.to_string())?;
+        let tx = db.transaction().map_err(|e| e.to_string())?;
+        let deleted = {
+            let mut query = tx
+                .prepare("SELECT data FROM documents WHERE id=?1 AND (?3 OR revision=?2)")
+                .map_err(|e| e.to_string())?;
+            let rows = query
+                .query_map(params![id, revision, all_versions], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(|e| e.to_string())?
+                .map(|row| {
+                    serde_json::from_str(&row.map_err(|e| e.to_string())?)
+                        .map_err(|e| e.to_string())
+                })
+                .collect::<Result<Vec<Document>>>()?;
+            rows
+        };
+        if deleted.is_empty() {
+            return Err("資料が見つかりません".into());
+        }
+        for table in ["project_documents", "chats", "threads", "translations"] {
+            tx.execute(
+                &format!("DELETE FROM {table} WHERE doc=?1 AND (?3 OR revision=?2)"),
+                params![id, revision, all_versions],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        tx.execute(
+            "DELETE FROM documents WHERE id=?1 AND (?3 OR revision=?2)",
+            params![id, revision, all_versions],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM cache WHERE NOT EXISTS (SELECT 1 FROM translations WHERE translations.key=cache.key)", []).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(deleted)
+    }
     pub fn list(&self) -> Result<Vec<Document>> {
         let db = self.0.lock().map_err(|e| e.to_string())?;
         let mut q = db
@@ -224,6 +267,7 @@ impl Store {
     ) -> Result<()> {
         let mut db = self.0.lock().map_err(|e| e.to_string())?;
         let tx = db.transaction().map_err(|e| e.to_string())?;
+        require_document(&tx, doc, rev)?;
         tx.execute(
             "INSERT OR REPLACE INTO cache VALUES(?1,?2)",
             params![key, text],
@@ -263,7 +307,7 @@ impl Store {
             .lock()
             .map_err(|e| e.to_string())?
             .execute(
-                "INSERT OR REPLACE INTO chats VALUES(?1,?2,?3,?4,?5)",
+                "INSERT OR REPLACE INTO chats SELECT ?1,?2,?3,?4,?5 FROM documents WHERE id=?1 AND revision=?2",
                 params![
                     doc,
                     rev,
@@ -272,7 +316,7 @@ impl Store {
                     msg.created_at
                 ],
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string()).and_then(require_written)?;
         Ok(())
     }
     pub fn history(&self, doc: &str, rev: &str) -> Result<Vec<ChatMessage>> {
@@ -305,10 +349,10 @@ impl Store {
             .lock()
             .map_err(|e| e.to_string())?
             .execute(
-                "INSERT OR REPLACE INTO threads VALUES(?1,?2,?3,?4)",
+                "INSERT OR REPLACE INTO threads SELECT ?1,?2,?3,?4 FROM documents WHERE id=?1 AND revision=?2",
                 params![doc, rev, account, thread],
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string()).and_then(require_written)?;
         Ok(())
     }
 }
@@ -327,6 +371,32 @@ fn insert_document(connection: &Connection, document: &Document) -> Result<()> {
         .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+fn require_document(connection: &Connection, doc: &str, rev: &str) -> Result<()> {
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM documents WHERE id=?1 AND revision=?2)",
+            params![doc, rev],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if exists {
+        Ok(())
+    } else {
+        Err("資料が見つかりません".into())
+    }
+}
+fn require_written(rows: usize) -> Result<usize> {
+    if rows == 0 {
+        Err("資料が見つかりません".into())
+    } else {
+        Ok(rows)
+    }
+}
+
+#[cfg(test)]
+#[path = "store_document_tests.rs"]
+mod document_tests;
 
 fn project_name(name: &str) -> Result<String> {
     let name = name.trim();
@@ -351,6 +421,11 @@ mod tests {
     #[test]
     fn cache_and_revision_are_separate() {
         let s = Store::open(Path::new(":memory:")).unwrap();
+        for revision in ["v1", "v2"] {
+            let mut doc = document(revision);
+            doc.id = "d".into();
+            s.put_document(&doc, None).unwrap();
+        }
         s.translation("d", "v1", "a", "k1", "訳1").unwrap();
         s.translation("d", "v2", "a", "k2", "訳2").unwrap();
         assert_eq!(s.translations("d", "v1").unwrap()["a"]["text"], "訳1");
