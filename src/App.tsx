@@ -38,6 +38,7 @@ import { extractWeb } from "./importers";
 import { importLocalFiles, type ImportResult } from "./library";
 import { ProjectControls } from "./ProjectControls";
 import { DocumentDeleteButton } from "./DocumentDeleteButton";
+import { ChatSessionBar } from "./ChatSessionBar";
 import { isMarkdownPath, matchesMarkdown, parseMarkdown } from "./markdown";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SegmentView, type SegmentDisplay } from "./SegmentView";
@@ -55,6 +56,7 @@ import type {
   Settings,
   Translation,
   ChatMessage,
+  ChatSession,
   JobEvent,
   Project,
 } from "./types";
@@ -113,6 +115,19 @@ export default function App() {
   const [question, setQuestion] = useState("");
   const [translationJob, setTranslationJob] = useState<string | null>(null);
   const [chatJob, setChatJob] = useState<string | null>(null);
+  const [chatSessions, setChatSessions] = useState<{
+    documentKey: string;
+    items: ChatSession[];
+    activeId: string;
+  }>({ documentKey: "", items: [], activeId: "" });
+  const sessions =
+    chatSessions.documentKey === activeKey ? chatSessions.items : [];
+  const activeSession =
+    chatSessions.documentKey === activeKey ? chatSessions.activeId : "";
+  const chatContext = activeSession ? `${activeKey}:${activeSession}` : "";
+  const chatContextRef = useRef(chatContext);
+  chatContextRef.current = chatContext;
+  const chatGeneration = useRef(0);
   const [leftWidth, setLeftWidth] = useState(252);
   const [rightWidth, setRightWidth] = useState(340);
   const [leftClosed, setLeftClosed] = useState(false);
@@ -142,7 +157,10 @@ export default function App() {
       early.current.set(e.jobId, events.slice(-200));
       return;
     }
-    const active = docRef.current && key(docRef.current) === target;
+    const active =
+      e.kind === "chat"
+        ? chatContextRef.current === target
+        : docRef.current && key(docRef.current) === target;
     if (
       e.kind === "translation" &&
       active &&
@@ -187,11 +205,20 @@ export default function App() {
       if (e.error && e.error !== "interrupted" && active) error(e.error);
       if (e.kind === "chat" && active) {
         const d = docRef.current!;
-        void api
-          .history(d.id, d.revision)
-          .then((m) => {
-            if (docRef.current && key(docRef.current) === target)
+        const session = target.slice(key(d).length + 1);
+        void Promise.all([
+          api.history(d.id, d.revision, session),
+          api.sessions(d.id, d.revision),
+        ])
+          .then(([m, items]) => {
+            if (chatContextRef.current === target) {
               setMessages(m);
+              setChatSessions((previous) =>
+                previous.documentKey === key(d)
+                  ? { ...previous, items }
+                  : previous,
+              );
+            }
           })
           .catch(error);
       }
@@ -280,14 +307,11 @@ export default function App() {
     }
     localStorage.setItem("study-active", target);
     if (projectId) localStorage.setItem(`study-active:${projectId}`, target);
-    void Promise.all([
-      api.translations(doc.id, doc.revision),
-      api.history(doc.id, doc.revision),
-    ])
-      .then(([t, m]) => {
+    void api
+      .translations(doc.id, doc.revision)
+      .then((t) => {
         if (!alive) return;
         setTranslations(t);
-        setMessages(m);
         setLoaded(true);
       })
       .catch(error);
@@ -295,6 +319,60 @@ export default function App() {
       alive = false;
     };
   }, [activeKey]);
+  useEffect(() => {
+    if (!desktop || !doc || doc.id === "sample") return;
+    const target = key(doc);
+    let alive = true;
+    void (async () => {
+      let items = await api.sessions(doc.id, doc.revision);
+      if (!items.length) {
+        await api.createSession(doc.id, doc.revision, true);
+        items = await api.sessions(doc.id, doc.revision);
+      }
+      if (!alive) return;
+      const saved = localStorage.getItem(`study-chat:${target}`);
+      setChatSessions({
+        documentKey: target,
+        items,
+        activeId: items.find((s) => s.id === saved)?.id || items[0]?.id || "",
+      });
+    })().catch((e) => {
+      if (alive) error(e);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [activeKey]);
+  useEffect(() => {
+    chatGeneration.current++;
+    const previous = currentJobs.current.chat;
+    if (previous && desktop) void api.cancel(previous).catch(error);
+    currentJobs.current.chat = null;
+    setChatJob(null);
+    setMessages([]);
+    setQuestion("");
+    if (!doc || !activeSession || !desktop) return;
+    const target = chatContext;
+    const generation = chatGeneration.current;
+    localStorage.setItem(`study-chat:${key(doc)}`, activeSession);
+    let alive = true;
+    void api
+      .history(doc.id, doc.revision, activeSession)
+      .then((m) => {
+        if (
+          alive &&
+          chatContextRef.current === target &&
+          chatGeneration.current === generation
+        )
+          setMessages(m);
+      })
+      .catch((e) => {
+        if (alive) error(e);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [chatContext]);
   useEffect(() => {
     messageEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
@@ -644,15 +722,31 @@ export default function App() {
     if (ids.length) setSelection(ids);
   }
   async function send() {
-    if (!doc || !question.trim() || chatJob || doc.id === "sample") return;
+    if (
+      !doc ||
+      !activeSession ||
+      !question.trim() ||
+      chatJob ||
+      doc.id === "sample"
+    )
+      return;
     const text = question.trim();
-    const target = key(doc);
+    const target = chatContext;
+    const generation = ++chatGeneration.current;
     try {
       setChatJob("starting");
-      const job = await api.chat(doc.id, doc.revision, text, references);
-      if (!docRef.current || key(docRef.current) !== target) {
+      const job = await api.chat(
+        doc.id,
+        doc.revision,
+        text,
+        references,
+        activeSession,
+      );
+      if (
+        chatContextRef.current !== target ||
+        chatGeneration.current !== generation
+      ) {
         await api.cancel(job);
-        setChatJob(null);
         return;
       }
       setQuestion("");
@@ -677,8 +771,13 @@ export default function App() {
       ]);
       bindJob(job, target, "chat");
     } catch (e) {
-      setChatJob(null);
-      error(e);
+      if (
+        chatGeneration.current === generation &&
+        chatContextRef.current === target
+      ) {
+        setChatJob(null);
+        error(e);
+      }
     }
   }
   function resize(side: "left" | "right", start: number) {
@@ -1367,6 +1466,32 @@ export default function App() {
           </div>
           {!rightClosed && (
             <>
+              <ChatSessionBar
+                sessions={sessions}
+                activeId={activeSession}
+                disabled={
+                  !desktop ||
+                  !doc ||
+                  doc.id === "sample" ||
+                  chatSessions.documentKey !== activeKey
+                }
+                onSelect={(activeId) =>
+                  setChatSessions((previous) => ({ ...previous, activeId }))
+                }
+                onError={error}
+                onCreate={async () => {
+                  if (!doc) return;
+                  const target = key(doc);
+                  const created = await api.createSession(doc.id, doc.revision);
+                  const items = await api.sessions(doc.id, doc.revision);
+                  if (docRef.current && key(docRef.current) === target)
+                    setChatSessions({
+                      documentKey: target,
+                      items,
+                      activeId: created.id,
+                    });
+                }}
+              />
               <div className="assistant-label">
                 <span className="ai-mark">C</span>
                 <strong>Codex</strong>
@@ -1505,7 +1630,8 @@ export default function App() {
                           !question.trim() ||
                           !references.length ||
                           !desktop ||
-                          doc?.id === "sample"
+                          doc?.id === "sample" ||
+                          !activeSession
                         }
                         onClick={() => void send()}
                         aria-label="質問を送信"

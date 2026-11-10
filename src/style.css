@@ -1046,6 +1046,19 @@ small {
     background: transparent;
   }
 }
+.chat-session-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.chat-session-bar select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px;
+  text-overflow: ellipsis;
+}
 .chat-pane {
   background: #fafbf6;
   display: flex;
