@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { ChatSession } from "./types";
 import type {
   Document,
   Translation,
@@ -10,7 +11,6 @@ import type {
   LocalFile,
   Project,
   DocumentDeletion,
-  ChatSession,
 } from "./types";
 export const desktop = isTauri();
 export async function call<T>(

@@ -32,13 +32,13 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { ChatSessionBar } from "./ChatSessionBar";
 import { api, desktop } from "./api";
 import { chosenSegments, selectReferences, sourceLabel } from "./core";
 import { extractWeb } from "./importers";
 import { importLocalFiles, type ImportResult } from "./library";
 import { ProjectControls } from "./ProjectControls";
 import { DocumentDeleteButton } from "./DocumentDeleteButton";
-import { ChatSessionBar } from "./ChatSessionBar";
 import { isMarkdownPath, matchesMarkdown, parseMarkdown } from "./markdown";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SegmentView, type SegmentDisplay } from "./SegmentView";
