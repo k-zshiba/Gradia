@@ -57,11 +57,18 @@ export interface Reference {
 }
 export interface ChatMessage {
   id: string;
+  sessionId?: string;
   role: "user" | "assistant";
   text: string;
   status: "completed" | "running" | "failed" | "interrupted";
   references: Reference[];
   createdAt: number;
+}
+export interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
 }
 export interface Settings {
   llamaPath: string;

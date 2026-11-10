@@ -170,9 +170,37 @@ fn get_translations(id: String, revision: String, state: State<'_, AppState>) ->
 fn get_history(
     id: String,
     revision: String,
+    session_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<ChatMessage>> {
-    state.store.history(&id, &revision)
+    let session = session_id.or(state
+        .store
+        .sessions(&id, &revision)?
+        .first()
+        .map(|s| s.id.clone()));
+    match session {
+        Some(session) => state.store.session_history(&id, &revision, &session),
+        None => state.store.history(&id, &revision),
+    }
+}
+#[tauri::command]
+fn list_chat_sessions(
+    id: String,
+    revision: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ChatSession>> {
+    state.store.sessions(&id, &revision)
+}
+#[tauri::command]
+fn create_chat_session(
+    id: String,
+    revision: String,
+    ensure: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<ChatSession> {
+    state
+        .store
+        .create_session(&id, &revision, ensure.unwrap_or(false))
 }
 #[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> Result<Settings> {
@@ -272,6 +300,8 @@ pub fn run() {
             save_preference,
             get_translations,
             get_history,
+            list_chat_sessions,
+            create_chat_session,
             get_settings,
             save_settings,
             cancel_job,

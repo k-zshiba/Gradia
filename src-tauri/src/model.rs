@@ -54,11 +54,21 @@ pub struct Reference {
 #[serde(rename_all = "camelCase")]
 pub struct ChatMessage {
     pub id: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
     pub role: String,
     pub text: String,
     pub status: String,
     pub references: Vec<Reference>,
     pub created_at: u64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSession {
+    pub id: String,
+    pub title: String,
+    pub created_at: u64,
+    pub updated_at: u64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
