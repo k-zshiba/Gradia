@@ -37,7 +37,9 @@ erDiagram
   DOCUMENT ||--o{ PROJECT_DOCUMENT : belongs_to
   DOCUMENT ||--o{ SEGMENT : contains
   SEGMENT ||--o| TRANSLATION : translated_as
-  DOCUMENT ||--o{ CHAT_MESSAGE : referenced_by
+  DOCUMENT ||--o{ CHAT_SESSION : has
+  CHAT_SESSION ||--o{ CHAT_MESSAGE : contains
+  CHAT_SESSION ||--o{ CODEX_THREAD : resumes
   TRANSLATION }o--|| CACHE : uses
   DOCUMENT {
     string id
@@ -79,6 +81,17 @@ erDiagram
     string status
     json references
   }
+  CHAT_SESSION {
+    string id
+    string document_id
+    string revision
+    string title
+  }
+  CODEX_THREAD {
+    string session_id
+    string account
+    string thread_id
+  }
 ```
 
 - 同じ取得元の内容が変わると、新しいrevisionとして保存します。過去の会話は過去の版を参照します。
@@ -98,6 +111,14 @@ remarkのCommonMark・GFM・数式構文を解析し、見出し・リスト・�
 資料の版は`markdown-v1`という処理識別子、元の本文、抽出した文の内容・位置から生成します。表示時の再解析結果と保存済みの文が一致しなければ、古い訳文を新しい文へ結び付けず、新しいプレビュー版への更新を案内します。旧形式の資料は、保存済み本文から新しい版を作成し、本文・過去の会話・旧版の参照先を保持します。プロジェクトの関連は新しい版にも追加します。
 
 ページ分割は文数80件を目安にトップレベルのブロック境界で行い、表やリストを途中で分断しません。1つの長いブロックは80件を超えて同じページに表示します。
+
+## 会話セッション
+
+同じ資料の版に複数の`chat_sessions`を作成します。`session_messages`と`session_threads`はセッションへの外部キーを持ち、Codexの再開IDはセッションと認証アカウントの組で保存します。質問前に資料ID・版・セッションの一致をRustで確認します。新しい会話には他の会話の再開IDを渡しません。
+
+DBの版3への移行はトランザクションで行います。旧形式のメッセージと再開IDを、資料の版ごとに「以前の会話」へ移し、重複移行を防ぎます。回答途中で終了したメッセージは再起動時に中断状態にします。
+
+UIは資料の版とセッションIDを合わせて回答イベントを振り分けます。会話を切り替えると現在の回答を中断し、遅れて返った開始結果も中断します。前の会話のイベント・履歴取得結果が選択中の履歴を上書きしないようにします。翻訳の表示とジョブは資料の版の単位を維持します。
 
 ## プロジェクトと一括取り込み
 

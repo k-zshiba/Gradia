@@ -2,11 +2,13 @@ use crate::model::*;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::{path::Path, sync::Mutex};
+#[path = "store_chat.rs"]
+mod chat;
 
 pub struct Store(pub Mutex<Connection>);
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
-        let db = Connection::open(path).map_err(|e| e.to_string())?;
+        let mut db = Connection::open(path).map_err(|e| e.to_string())?;
         db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
           CREATE TABLE IF NOT EXISTS documents(id TEXT NOT NULL, revision TEXT NOT NULL, data TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(id,revision));
           CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY,text TEXT NOT NULL);
@@ -19,9 +21,11 @@ impl Store {
             PRIMARY KEY(project,doc,revision),
             FOREIGN KEY(project) REFERENCES projects(id) ON DELETE CASCADE,
             FOREIGN KEY(doc,revision) REFERENCES documents(id,revision));
-          PRAGMA user_version=2;").map_err(|e|e.to_string())?;
+          ").map_err(|e|e.to_string())?;
+        chat::migrate(&mut db)?;
         // In-flight messages cannot still be running after a process restart.
         db.execute("UPDATE chats SET data=json_set(data,'$.status','interrupted') WHERE json_extract(data,'$.status')='running'",[]).map_err(|e|e.to_string())?;
+        db.execute("UPDATE session_messages SET data=json_set(data,'$.status','interrupted') WHERE json_extract(data,'$.status')='running'",[]).map_err(|e|e.to_string())?;
         Ok(Self(Mutex::new(db)))
     }
     pub fn put_document(&self, doc: &Document, project: Option<&str>) -> Result<()> {
@@ -259,6 +263,9 @@ impl Store {
         Ok(Value::Object(out))
     }
     pub fn save_message(&self, doc: &str, rev: &str, msg: &ChatMessage) -> Result<()> {
+        if let Some(session) = &msg.session_id {
+            return self.save_session_message(doc, rev, session, msg);
+        }
         self.0
             .lock()
             .map_err(|e| e.to_string())?
@@ -288,6 +295,7 @@ impl Store {
         })
         .collect()
     }
+    #[cfg(test)]
     pub fn thread(&self, doc: &str, rev: &str, account: &str) -> Result<Option<String>> {
         self.0
             .lock()
@@ -300,6 +308,7 @@ impl Store {
             .optional()
             .map_err(|e| e.to_string())
     }
+    #[cfg(test)]
     pub fn save_thread(&self, doc: &str, rev: &str, account: &str, thread: &str) -> Result<()> {
         self.0
             .lock()
@@ -388,6 +397,7 @@ mod tests {
             "v1",
             &ChatMessage {
                 id: "message".into(),
+                session_id: None,
                 role: "assistant".into(),
                 text: "Answer".into(),
                 status: "completed".into(),
@@ -503,6 +513,7 @@ mod tests {
             &original.revision,
             &ChatMessage {
                 id: "old-question".into(),
+                session_id: None,
                 role: "user".into(),
                 text: "Original question".into(),
                 status: "completed".into(),

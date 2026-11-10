@@ -9,6 +9,7 @@ import type {
   JobEvent,
   LocalFile,
   Project,
+  ChatSession,
 } from "./types";
 export const desktop = isTauri();
 export async function call<T>(
@@ -60,15 +61,26 @@ export const api = {
     call<string>("start_translation", { documentId, revision, segmentIds }),
   cancel: (jobId: string) => call<void>("cancel_job", { jobId }),
   prepareUpdate: () => call<void>("prepare_update"),
-  history: (id: string, revision: string) =>
-    call<ChatMessage[]>("get_history", { id, revision }),
+  sessions: (id: string, revision: string) =>
+    call<ChatSession[]>("list_chat_sessions", { id, revision }),
+  createSession: (id: string, revision: string, ensure = false) =>
+    call<ChatSession>("create_chat_session", { id, revision, ensure }),
+  history: (id: string, revision: string, sessionId?: string) =>
+    call<ChatMessage[]>("get_history", { id, revision, sessionId }),
   chat: (
     documentId: string,
     revision: string,
     question: string,
     references: Reference[],
+    sessionId?: string,
   ) =>
-    call<string>("start_chat", { documentId, revision, question, references }),
+    call<string>("start_chat", {
+      documentId,
+      revision,
+      question,
+      references,
+      sessionId,
+    }),
   settings: () => call<Settings>("get_settings"),
   saveSettings: (settings: Settings) =>
     call<void>("save_settings", { settings }),
