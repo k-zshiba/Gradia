@@ -23,12 +23,39 @@ pub struct AppState {
     engine: Mutex<Option<translation::Engine>>,
     auth_gate: Mutex<()>,
     chat_gate: Mutex<()>,
+    mutation_gate: Mutex<()>,
 }
 impl AppState {
     async fn cancel_jobs(&self) {
         for token in self.jobs.lock().await.values() {
             token.cancel();
         }
+    }
+    async fn cancel_and_wait(&self, ids: Option<&[String]>) -> Result<()> {
+        {
+            let jobs = self.jobs.lock().await;
+            for (id, token) in jobs.iter() {
+                if ids.is_none_or(|ids| ids.contains(id)) {
+                    token.cancel();
+                }
+            }
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            loop {
+                let pending = self
+                    .jobs
+                    .lock()
+                    .await
+                    .keys()
+                    .any(|id| ids.is_none_or(|ids| ids.contains(id)));
+                if !pending {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .map_err(|_| "処理の終了を待っています。少し待ってやり直してください".to_string())
     }
 }
 
@@ -44,10 +71,50 @@ fn test_state(root: PathBuf) -> AppState {
         engine: Mutex::new(None),
         auth_gate: Mutex::new(()),
         chat_gate: Mutex::new(()),
+        mutation_gate: Mutex::new(()),
     }
 }
 pub fn emit(app: &tauri::AppHandle, event: Value) {
     let _ = app.emit("study-job", event);
+}
+
+#[cfg(test)]
+mod job_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn deletion_waits_for_cancelled_jobs_to_finish_their_last_write() {
+        let state = std::sync::Arc::new(test_state(PathBuf::new()));
+        let selected = CancellationToken::new();
+        let other = CancellationToken::new();
+        state
+            .jobs
+            .lock()
+            .await
+            .insert("selected".into(), selected.clone());
+        state
+            .jobs
+            .lock()
+            .await
+            .insert("other".into(), other.clone());
+        let worker = state.clone();
+        let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let wrote = finished.clone();
+        tokio::spawn(async move {
+            selected.cancelled().await;
+            tokio::task::yield_now().await;
+            wrote.store(true, std::sync::atomic::Ordering::SeqCst);
+            worker.jobs.lock().await.remove("selected");
+        });
+        state
+            .cancel_and_wait(Some(&["selected".into()]))
+            .await
+            .unwrap();
+        assert!(finished.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!other.is_cancelled());
+        state.jobs.lock().await.remove("other");
+        state.cancel_and_wait(None).await.unwrap();
+    }
 }
 #[tauri::command]
 fn list_documents(state: State<'_, AppState>) -> Result<Vec<Document>> {
@@ -172,15 +239,8 @@ async fn cancel_job(job_id: String, state: State<'_, AppState>) -> Result<()> {
 }
 #[tauri::command]
 async fn prepare_update(state: State<'_, AppState>) -> Result<()> {
-    state.cancel_jobs().await;
-    // Exiting before jobs leave the map would lose their final chat/history state.
-    tokio::time::timeout(std::time::Duration::from_secs(15), async {
-        while !state.jobs.lock().await.is_empty() {
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
-    })
-    .await
-    .map_err(|_| "処理の終了を待っています。少し待って更新をやり直してください".to_string())?;
+    let _gate = state.mutation_gate.lock().await;
+    state.cancel_and_wait(None).await?;
     if let Some(mut engine) = state.engine.lock().await.take() {
         let _ = engine.child.kill().await;
     }
@@ -218,6 +278,7 @@ pub fn run() {
                 engine: Mutex::new(None),
                 auth_gate: Mutex::new(()),
                 chat_gate: Mutex::new(()),
+                mutation_gate: Mutex::new(()),
             });
             Ok(())
         })
@@ -232,6 +293,7 @@ pub fn run() {
             files::list_folder,
             files::fetch_page,
             files::save_document,
+            files::delete_document,
             files::upgrade_markdown,
             files::read_snapshot,
             files::open_url,

@@ -168,6 +168,20 @@ small {
 .primary:hover:not(:disabled) {
   background: #234632;
 }
+.danger {
+  background: #974c42;
+  border-color: #974c42;
+  color: white;
+}
+.danger:hover:not(:disabled) {
+  background: #7f3b33;
+}
+.delete-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0;
+}
 .text-button {
   background: transparent;
   border: 0;

@@ -38,6 +38,7 @@ import { chosenSegments, selectReferences, sourceLabel } from "./core";
 import { extractWeb } from "./importers";
 import { importLocalFiles, type ImportResult } from "./library";
 import { ProjectControls } from "./ProjectControls";
+import { DocumentDeleteButton } from "./DocumentDeleteButton";
 import { isMarkdownPath, matchesMarkdown, parseMarkdown } from "./markdown";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SegmentView, type SegmentDisplay } from "./SegmentView";
@@ -1071,6 +1072,33 @@ export default function App() {
                   {project?.name || "ライブラリー"} <span>/</span> {doc.title}
                 </span>
                 <div className="toolbar-actions">
+                  <DocumentDeleteButton
+                    document={doc}
+                    disabled={!desktop || !!busy || doc.id === "sample"}
+                    onError={error}
+                    onDeleted={async (result) => {
+                      const [docs, nextProjects] = await Promise.all([
+                        api.list(),
+                        api.projects(),
+                      ]);
+                      const deleted = new Set(
+                        result.deleted.map((d) => `${d.id}:${d.revision}`),
+                      );
+                      setDocuments(docs);
+                      setProjects(nextProjects);
+                      if (docRef.current && deleted.has(key(docRef.current))) {
+                        const group = nextProjects.find(
+                          (p) => p.id === projectId,
+                        );
+                        const remaining = group
+                          ? docs.filter((d) =>
+                              group.documentKeys.includes(key(d)),
+                            )
+                          : docs;
+                        setActiveKey(remaining[0] ? key(remaining[0]) : "");
+                      }
+                    }}
+                  />
                   {doc.kind === "web" && (
                     <button
                       className="icon"

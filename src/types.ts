@@ -36,6 +36,10 @@ export interface Project {
   name: string;
   documentKeys: string[];
 }
+export interface DocumentDeletion {
+  deleted: { id: string; revision: string }[];
+  cleanupErrors: string[];
+}
 export interface Translation {
   segmentId: string;
   text: string;

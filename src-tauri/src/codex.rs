@@ -400,6 +400,7 @@ pub async fn start_chat(
     if question.trim().is_empty() || question.chars().count() > 8000 {
         return Err("質問を1〜8,000文字で入力してください".into());
     }
+    let _gate = state.mutation_gate.lock().await;
     let doc = state.store.document(&document_id, &revision)?;
     validate_refs(&doc, &references)?;
     let session = match session_id {

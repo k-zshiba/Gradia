@@ -356,6 +356,7 @@ pub async fn start_translation(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String> {
+    let _gate = state.mutation_gate.lock().await;
     let doc = state.store.document(&document_id, &revision)?;
     let mut seen = std::collections::HashSet::new();
     let ids = segment_ids
