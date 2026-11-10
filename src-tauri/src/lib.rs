@@ -3,6 +3,7 @@ mod auth;
 mod chat_delete_tests;
 mod codex;
 mod files;
+mod images;
 mod model;
 mod store;
 mod translation;
@@ -20,7 +21,7 @@ pub struct AppState {
     store: store::Store,
     http: reqwest::Client,
     local_http: reqwest::Client,
-    imports: Mutex<HashMap<String, String>>,
+    imports: Mutex<HashMap<String, files::ImportSource>>,
     jobs: Mutex<HashMap<String, CancellationToken>>,
     engine: Mutex<Option<translation::Engine>>,
     auth_gate: Mutex<()>,
@@ -313,6 +314,7 @@ pub fn run() {
             files::delete_document,
             files::upgrade_markdown,
             files::read_snapshot,
+            images::get_document_images,
             files::open_url,
             save_preference,
             get_translations,

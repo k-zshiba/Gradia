@@ -12,6 +12,8 @@ impl Store {
         db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
           CREATE TABLE IF NOT EXISTS documents(id TEXT NOT NULL, revision TEXT NOT NULL, data TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(id,revision));
           CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY,text TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS document_images(doc TEXT NOT NULL,revision TEXT NOT NULL,url TEXT NOT NULL,mime TEXT NOT NULL,data BLOB NOT NULL,
+            PRIMARY KEY(doc,revision,url),FOREIGN KEY(doc,revision) REFERENCES documents(id,revision) ON DELETE CASCADE);
           CREATE TABLE IF NOT EXISTS translations(doc TEXT, revision TEXT, segment TEXT, key TEXT NOT NULL, PRIMARY KEY(doc,revision,segment));
           CREATE TABLE IF NOT EXISTS chats(doc TEXT, revision TEXT, id TEXT PRIMARY KEY, data TEXT NOT NULL, created INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS threads(doc TEXT, revision TEXT, account TEXT, thread TEXT NOT NULL, PRIMARY KEY(doc,revision,account));
@@ -28,10 +30,26 @@ impl Store {
         db.execute("UPDATE session_messages SET data=json_set(data,'$.status','interrupted') WHERE json_extract(data,'$.status')='running'",[]).map_err(|e|e.to_string())?;
         Ok(Self(Mutex::new(db)))
     }
+    #[cfg(test)]
     pub fn put_document(&self, doc: &Document, project: Option<&str>) -> Result<()> {
+        self.put_document_with_images(doc, project, &[])
+    }
+    pub fn put_document_with_images(
+        &self,
+        doc: &Document,
+        project: Option<&str>,
+        images: &[crate::images::DocumentImage],
+    ) -> Result<()> {
         let mut db = self.0.lock().map_err(|e| e.to_string())?;
         let tx = db.transaction().map_err(|e| e.to_string())?;
         insert_document(&tx, doc)?;
+        for image in images {
+            tx.execute(
+                "INSERT OR IGNORE INTO document_images VALUES(?1,?2,?3,?4,?5)",
+                params![doc.id, doc.revision, image.url, image.mime, image.data],
+            )
+            .map_err(|e| e.to_string())?;
+        }
         if let Some(project) = project {
             tx.execute(
                 "INSERT OR IGNORE INTO project_documents VALUES(?1,?2,?3)",
@@ -40,6 +58,21 @@ impl Store {
             .map_err(|e| e.to_string())?;
         }
         tx.commit().map_err(|e| e.to_string())
+    }
+    pub fn images(&self, doc: &str, revision: &str) -> Result<Vec<crate::images::DocumentImage>> {
+        let db = self.0.lock().map_err(|e| e.to_string())?;
+        let mut q = db.prepare("SELECT url,mime,data FROM document_images WHERE doc=?1 AND revision=?2 ORDER BY url").map_err(|e|e.to_string())?;
+        let rows = q
+            .query_map(params![doc, revision], |r| {
+                Ok(crate::images::DocumentImage {
+                    url: r.get(0)?,
+                    mime: r.get(1)?,
+                    data: r.get(2)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
     }
     pub fn projects(&self) -> Result<Vec<Project>> {
         let db = self.0.lock().map_err(|e| e.to_string())?;
@@ -71,6 +104,7 @@ impl Store {
         let tx = db.transaction().map_err(|e| e.to_string())?;
         insert_document(&tx, document)?;
         tx.execute("INSERT OR IGNORE INTO project_documents(project,doc,revision) SELECT project,doc,?3 FROM project_documents WHERE doc=?1 AND revision=?2", params![document.id, previous_revision, document.revision]).map_err(|e| e.to_string())?;
+        tx.execute("INSERT OR IGNORE INTO document_images SELECT doc,?3,url,mime,data FROM document_images WHERE doc=?1 AND revision=?2",params![document.id,previous_revision,document.revision]).map_err(|e|e.to_string())?;
         tx.commit().map_err(|e| e.to_string())
     }
     pub fn create_project(&self, name: &str) -> Result<Project> {

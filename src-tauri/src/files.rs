@@ -2,8 +2,17 @@ use crate::{model::*, AppState};
 use serde_json::{json, Value};
 use tauri::State;
 const MAX_FILE: u64 = 100 * 1024 * 1024;
+#[derive(Clone, Default)]
+pub struct ImportSource {
+    pub fingerprint: Option<String>,
+    pub folder: Option<std::path::PathBuf>,
+}
 #[tauri::command]
-pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<Value> {
+pub async fn read_file(
+    path: String,
+    include_images: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<Value> {
     let path = tokio::fs::canonicalize(path)
         .await
         .map_err(|e| e.to_string())?;
@@ -41,12 +50,29 @@ pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<Value
     };
     let blob = state.root.join("snapshots").join(&fingerprint);
     let mut imports = state.imports.lock().await;
+    let folder = if include_images.unwrap_or(false) {
+        Some(
+            imports
+                .get(&source)
+                .and_then(|s| s.folder.clone())
+                .filter(|root| path.starts_with(root))
+                .ok_or("フォルダーを選択し直してください")?,
+        )
+    } else {
+        None
+    };
     if !blob.exists() {
         tokio::fs::write(&blob, &bytes)
             .await
             .map_err(|e| e.to_string())?;
     }
-    imports.insert(source.clone(), fingerprint);
+    imports.insert(
+        source.clone(),
+        ImportSource {
+            fingerprint: Some(fingerprint),
+            folder,
+        },
+    );
     drop(imports);
     if ext == "pdf" {
         return Ok(json!({"path":source,"name":name,"kind":"pdf","bytes":bytes}));
@@ -56,7 +82,27 @@ pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<Value
     )
 }
 #[tauri::command]
-pub async fn list_folder(path: String) -> Result<Vec<String>> {
+pub async fn list_folder(path: String, state: State<'_, AppState>) -> Result<Vec<String>> {
+    let root = tokio::fs::canonicalize(&path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let files = scan_folder(path).await?;
+    let mut imports = state.imports.lock().await;
+    for path in &files {
+        if ["md", "markdown"].contains(
+            &std::path::Path::new(path)
+                .extension()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_ascii_lowercase()
+                .as_str(),
+        ) {
+            imports.entry(path.clone()).or_default().folder = Some(root.clone());
+        }
+    }
+    Ok(files)
+}
+async fn scan_folder(path: String) -> Result<Vec<String>> {
     tokio::task::spawn_blocking(move || {
         let path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
         if !path.is_dir() {
@@ -153,7 +199,7 @@ mod tests {
         ] {
             std::fs::write(dir.path().join(name), "Original text").unwrap();
         }
-        let paths = list_folder(dir.path().to_string_lossy().to_string())
+        let paths = scan_folder(dir.path().to_string_lossy().to_string())
             .await
             .unwrap();
         let names: Vec<_> = paths
@@ -168,7 +214,7 @@ mod tests {
             .collect();
         assert_eq!(names, ["book.pdf", "code.rs", "notes.md"]);
         assert!(
-            list_folder(dir.path().join("book.pdf").to_string_lossy().to_string())
+            scan_folder(dir.path().join("book.pdf").to_string_lossy().to_string())
                 .await
                 .is_err()
         );
@@ -192,6 +238,7 @@ pub async fn fetch_page(url: String) -> Result<Value> {
 pub async fn save_document(
     mut document: Document,
     project_id: Option<String>,
+    image_urls: Option<Vec<String>>,
     state: State<'_, AppState>,
 ) -> Result<Document> {
     let _gate = state.mutation_gate.lock().await;
@@ -207,14 +254,31 @@ pub async fn save_document(
     } else {
         imports
             .get(&document.source)
-            .cloned()
+            .and_then(|s| s.fingerprint.clone())
             .ok_or("ファイルを再選択してください")?
     };
+    let mut images = Vec::new();
     if document.kind == "text" && document.language.as_deref() == Some("markdown") {
         document.revision = markdown_revision(&document.content, &document.segments)?;
+        if let Some(folder) = imports.get(&document.source).and_then(|s| s.folder.clone()) {
+            let source = document.source.clone();
+            let urls = image_urls.unwrap_or_default();
+            let (loaded, warnings) = tokio::task::spawn_blocking(move || {
+                crate::images::load(&folder, std::path::Path::new(&source), urls)
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+            images = loaded;
+            document.warnings.extend(warnings);
+            if !images.is_empty() {
+                document.revision = crate::images::revision(&document.revision, &images)?;
+            }
+        }
     }
     document.created_at = now();
-    state.store.put_document(&document, project_id.as_deref())?;
+    state
+        .store
+        .put_document_with_images(&document, project_id.as_deref(), &images)?;
     imports.remove(&document.source);
     state.store.document(&document.id, &document.revision)
 }
@@ -265,6 +329,10 @@ pub async fn upgrade_markdown(
     document.kind = "text".into();
     document.language = Some("markdown".into());
     document.revision = markdown_revision(&document.content, &segments)?;
+    let images = state.store.images(&id, &revision)?;
+    if !images.is_empty() {
+        document.revision = crate::images::revision(&document.revision, &images)?;
+    }
     document.segments = segments;
     document.position = old_position.and_then(|line| {
         document
@@ -313,7 +381,7 @@ pub async fn delete_document(
     let remaining = state.store.list()?;
     let mut retained: std::collections::HashSet<String> =
         remaining.iter().filter_map(snapshot_key).collect();
-    retained.extend(imports.values().cloned());
+    retained.extend(imports.values().filter_map(|s| s.fingerprint.clone()));
     let candidates: std::collections::HashSet<String> =
         deleted.iter().filter_map(snapshot_key).collect();
     let mut cleanup_errors = Vec::new();
