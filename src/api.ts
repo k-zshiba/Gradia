@@ -9,6 +9,7 @@ import type {
   JobEvent,
   LocalFile,
   Project,
+  DocumentDeletion,
 } from "./types";
 export const desktop = isTauri();
 export async function call<T>(
@@ -23,6 +24,8 @@ export async function call<T>(
 }
 export const api = {
   list: () => call<Document[]>("list_documents"),
+  deleteDocument: (id: string, revision: string, allVersions: boolean) =>
+    call<DocumentDeletion>("delete_document", { id, revision, allVersions }),
   save: (
     document: Omit<Document, "id" | "revision" | "createdAt">,
     projectId: string | null = null,
