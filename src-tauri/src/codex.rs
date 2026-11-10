@@ -395,11 +395,11 @@ pub async fn start_chat(
     if question.trim().is_empty() || question.chars().count() > 8000 {
         return Err("質問を1〜8,000文字で入力してください".into());
     }
+    let _gate = state.mutation_gate.lock().await;
     let doc = state.store.document(&document_id, &revision)?;
     validate_refs(&doc, &references)?;
     let job = uuid::Uuid::new_v4().to_string();
     let token = CancellationToken::new();
-    state.jobs.lock().await.insert(job.clone(), token.clone());
     let user = ChatMessage {
         id: uuid::Uuid::new_v4().to_string(),
         role: "user".into(),
@@ -418,6 +418,7 @@ pub async fn start_chat(
         created_at: now() + 1,
     };
     state.store.save_message(&doc.id, &doc.revision, &message)?;
+    state.jobs.lock().await.insert(job.clone(), token.clone());
     let cloned = job.clone();
     tokio::spawn(async move {
         let state = app.state::<AppState>();
