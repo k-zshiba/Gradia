@@ -1,4 +1,10 @@
-import { createElement, Fragment, useMemo, type ReactNode } from "react";
+import {
+  createElement,
+  Fragment,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import type { Nodes, PhrasingContent } from "mdast";
 import { api, desktop } from "./api";
 import {
@@ -15,12 +21,14 @@ export function MarkdownPreview({
   display,
   onJump,
   onError,
+  images = {},
 }: {
   document: MarkdownDocument;
   visible: Segment[];
   display: SegmentDisplay;
   onJump: (id: string) => void;
   onError: (error: unknown) => void;
+  images?: Record<string, string>;
 }) {
   const visibleIds = new Set(visible.map((s) => s.id));
   function link(
@@ -120,18 +128,17 @@ export function MarkdownPreview({
           break;
         }
         case "image":
-        case "imageReference":
-          // Auto-loading images would issue network or local-file requests just by opening a document.
+        case "imageReference": {
+          const url =
+            node.type === "image"
+              ? node.url
+              : document.definitions.get(referenceKey(node.identifier))?.url;
+          const source = url ? images[url] : undefined;
           content = (
-            <span
-              className="markdown-image-placeholder"
-              role="img"
-              aria-label={node.alt || "画像"}
-            >
-              画像: {node.alt || "画像の参照"}
-            </span>
+            <MarkdownImage key={url} source={source} alt={node.alt || "画像"} />
           );
           break;
+        }
         case "footnoteReference":
           content = <sup>[{node.identifier}]</sup>;
           break;
@@ -283,6 +290,31 @@ export function MarkdownPreview({
         }),
       )}
     </div>
+  );
+}
+
+function MarkdownImage({ source, alt }: { source?: string; alt: string }) {
+  const [failedSource, setFailedSource] = useState<string>();
+  // Loading the Markdown URL directly would let a document access the network or arbitrary files.
+  if (
+    source &&
+    source !== failedSource &&
+    /^data:image\/(?:png|jpeg|gif|webp);base64,/.test(source)
+  )
+    return (
+      <img
+        className="markdown-image"
+        src={source}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+        onError={(event) => setFailedSource(event.currentTarget.src)}
+      />
+    );
+  return (
+    <span className="markdown-image-placeholder" role="img" aria-label={alt}>
+      画像: {alt}
+    </span>
   );
 }
 

@@ -835,6 +835,11 @@ small {
   border-top: 1px solid var(--line);
   margin: 25px 0;
 }
+.markdown-image {
+  max-width: 100%;
+  height: auto;
+  vertical-align: middle;
+}
 .markdown-image-placeholder {
   display: inline-block;
   padding: 8px 12px;

@@ -107,6 +107,10 @@ export default function App() {
     {},
   );
   const [loaded, setLoaded] = useState(false);
+  const [images, setImages] = useState<{
+    documentKey: string;
+    urls: Record<string, string>;
+  }>({ documentKey: "", urls: {} });
   const [peek, setPeek] = useState<Set<string>>(new Set());
   const [selection, setSelection] = useState<string[]>([]);
   const [visible, setVisible] = useState<string[]>([]);
@@ -315,6 +319,24 @@ export default function App() {
         setLoaded(true);
       })
       .catch(error);
+    return () => {
+      alive = false;
+    };
+  }, [activeKey]);
+  useEffect(() => {
+    setImages({ documentKey: "", urls: {} });
+    if (!desktop || !doc || doc.id === "sample" || doc.language !== "markdown")
+      return;
+    const target = key(doc);
+    let alive = true;
+    void api
+      .images(doc.id, doc.revision)
+      .then((urls) => {
+        if (alive) setImages({ documentKey: target, urls });
+      })
+      .catch((e) => {
+        if (alive) error(e);
+      });
     return () => {
       alive = false;
     };
@@ -578,7 +600,7 @@ export default function App() {
     if (id && active) localStorage.setItem(`study-active:${id}`, active);
     setFilter("");
   }
-  async function addFiles(paths: string[]) {
+  async function addFiles(paths: string[], folder = false) {
     if (!paths.length) {
       setToast("このフォルダーには対応するファイルがありません");
       return;
@@ -593,6 +615,7 @@ export default function App() {
         projectId || null,
         setBusy,
         controller.signal,
+        folder,
       );
       const addedKeys = new Set(result.documents.map(key));
       setDocuments((list) => [
@@ -647,7 +670,7 @@ export default function App() {
       if (typeof path === "string") {
         setBusy("フォルダーを読み込んでいます…");
         const files = await api.folder(path);
-        await addFiles(files);
+        await addFiles(files, true);
       }
     } catch (e) {
       error(e);
@@ -1345,6 +1368,9 @@ export default function App() {
                     {markdown ? (
                       <MarkdownPreview
                         document={markdown}
+                        images={
+                          images.documentKey === activeKey ? images.urls : {}
+                        }
                         visible={shown}
                         display={segmentDisplay}
                         onJump={jump}

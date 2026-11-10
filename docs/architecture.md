@@ -36,6 +36,7 @@ erDiagram
   PROJECT ||--o{ PROJECT_DOCUMENT : groups
   DOCUMENT ||--o{ PROJECT_DOCUMENT : belongs_to
   DOCUMENT ||--o{ SEGMENT : contains
+  DOCUMENT ||--o{ DOCUMENT_IMAGE : snapshots
   SEGMENT ||--o| TRANSLATION : translated_as
   DOCUMENT ||--o{ CHAT_SESSION : has
   CHAT_SESSION ||--o{ CHAT_MESSAGE : contains
@@ -75,6 +76,13 @@ erDiagram
     string key
     string translated_text
   }
+  DOCUMENT_IMAGE {
+    string document_id
+    string revision
+    string url
+    string mime
+    blob data
+  }
   CHAT_MESSAGE {
     string id
     string revision
@@ -112,13 +120,23 @@ erDiagram
 
 remarkのCommonMark・GFM・数式構文を解析し、見出し・リスト・引用・表の構造を保ったまま、本文・見出し・表のセルを文単位に分割します。インライン書式を各文の範囲で切り出し、コード・数式・画像を文境界の判定から除外します。元のブロックの行範囲と見出しアンカーを`Segment.location`に保持します。
 
-原本のMarkdownは`Document.content`に保存します。`language: markdown`の資料は本文を解析し直してReactの要素として表示し、生HTMLをDOMへ挿入しません。訳文も同じ許可済み要素で表示し、外部リンクはhttp/httpsに制限します。画像は代替テキストだけを表示し、ネットワーク・ローカルファイルの自動読み込みは行いません。コードと数式は翻訳対象外です。
+原本のMarkdownは`Document.content`に保存します。`language: markdown`の資料は本文を解析し直してReactの要素として表示し、生HTMLをDOMへ挿入しません。訳文も同じ許可済み要素で表示し、外部リンクはhttp/httpsに制限します。画像は保存済みのコピーだけを表示し、閲覧時にネットワークや元ファイルへアクセスしません。コードと数式は翻訳対象外です。
 
 翻訳割合・併記・原文確認は他の資料と共通の`SegmentView`を使います。PLaMoへの入力では、インラインコード・数式・リンク先・書式記号を保護し、保持を確認できない訳文は採用しません。複数バッククォートや括弧を含むリンク先も保護します。
 
 資料の版は`markdown-v1`という処理識別子、元の本文、抽出した文の内容・位置から生成します。表示時の再解析結果と保存済みの文が一致しなければ、古い訳文を新しい文へ結び付けず、新しいプレビュー版への更新を案内します。旧形式の資料は、保存済み本文から新しい版を作成し、本文・過去の会話・旧版の参照先を保持します。プロジェクトの関連は新しい版にも追加します。
 
 ページ分割は文数80件を目安にトップレベルのブロック境界で行い、表やリストを途中で分断しません。1つの長いブロックは80件を超えて同じページに表示します。
+
+### フォルダー内の画像
+
+フォルダー走査で返したMarkdownに、そのフォルダーの取り込み権限を一時的に紐づけます。通常のファイル追加では画像を読み込みません。UIがMarkdownの画像記法・参照定義を抽出し、Rustが保存時に元ファイルからの相対パスを解決します。フォルダー内のパスであることと、途中にシンボリックリンク・ジャンクションがないことを確認してから正規化します。リンク先のネットワーク共有へ検査時にアクセスすることも防ぎます。絶対パス・ネットワークパス・URL・NTFSの代替データストリーム参照も拒否します。
+
+拡張子ではなく内容の識別子でPNG・JPEG・GIF・WebPを判定します。SVG・HTMLは取り込みません。1枚10 MB、資料ごとに合計40 MB・参照256件を上限とし、容量を確認してから読み込みます。失敗は注記に残し、本文の保存は継続します。
+
+画像は`document_images`へ元URL・MIME・バイナリーを保存し、資料とプロジェクト登録を同じトランザクションで確定します。URLと内容ハッシュを資料の版に含め、画像だけが変わった場合も過去の表示と会話を保持します。プレビューの更新では保存済み画像を引き継ぎ、資料の版を削除すると外部キーで対応する画像も削除します。既存DBには画像テーブルを追加します。
+
+UIは表示中のMarkdownの画像だけを取得し、許可した画像MIMEのdata URLとして表示します。Markdownや訳文のURLを直接`img.src`へ渡さず、CSPも変更しません。保存済み画像がない場合やデコードに失敗した場合は代替テキストを表示します。
 
 ## 会話セッション
 

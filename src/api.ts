@@ -30,7 +30,8 @@ export const api = {
   save: (
     document: Omit<Document, "id" | "revision" | "createdAt">,
     projectId: string | null = null,
-  ) => call<Document>("save_document", { document, projectId }),
+    imageUrls?: string[],
+  ) => call<Document>("save_document", { document, projectId, imageUrls }),
   projects: () => call<Project[]>("list_projects"),
   markdown: (id: string, revision: string, segments: Document["segments"]) =>
     call<Document>("upgrade_markdown", { id, revision, segments }),
@@ -44,7 +45,10 @@ export const api = {
     revision: string,
     add: boolean,
   ) => call<void>("set_project_document", { projectId, id, revision, add }),
-  read: (path: string) => call<LocalFile>("read_file", { path }),
+  read: (path: string, includeImages = false) =>
+    call<LocalFile>("read_file", { path, includeImages }),
+  images: (id: string, revision: string) =>
+    call<Record<string, string>>("get_document_images", { id, revision }),
   folder: (path: string) => call<string[]>("list_folder", { path }),
   fetch: (url: string) =>
     call<{ html: string; url: string }>("fetch_page", { url }),
