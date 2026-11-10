@@ -116,10 +116,7 @@ try {
   }, old);
   assert.equal((await readdir(join(root, "data/snapshots"))).length, 2);
   await page.reload();
-  await page
-    .locator(".document-item")
-    .filter({ hasText: "first.txt" })
-    .click();
+  await page.locator(".document-item").filter({ hasText: "first.txt" }).click();
   await page.getByRole("button", { name: "資料を削除", exact: true }).click();
   await page
     .getByRole("checkbox", { name: "この資料のすべての版を削除する" })
@@ -153,5 +150,3 @@ try {
   await stop();
   if (vite) vite.kill();
 }
-
-
