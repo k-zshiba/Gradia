@@ -1,4 +1,6 @@
 mod auth;
+#[cfg(test)]
+mod chat_delete_tests;
 mod codex;
 mod files;
 mod model;
@@ -26,6 +28,12 @@ pub struct AppState {
     mutation_gate: Mutex<()>,
 }
 impl AppState {
+    async fn delete_chat(&self, id: &str, revision: &str, session: &str) -> Result<()> {
+        let _gate = self.mutation_gate.lock().await;
+        let jobs = self.store.session_job_ids(id, revision, session)?;
+        self.cancel_and_wait(Some(&jobs)).await?;
+        self.store.delete_session(id, revision, session)
+    }
     async fn cancel_jobs(&self) {
         for token in self.jobs.lock().await.values() {
             token.cancel();
@@ -192,6 +200,15 @@ fn list_chat_sessions(
     state.store.sessions(&id, &revision)
 }
 #[tauri::command]
+async fn delete_chat_session(
+    id: String,
+    revision: String,
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    state.delete_chat(&id, &revision, &session_id).await
+}
+#[tauri::command]
 fn create_chat_session(
     id: String,
     revision: String,
@@ -301,6 +318,7 @@ pub fn run() {
             get_translations,
             get_history,
             list_chat_sessions,
+            delete_chat_session,
             create_chat_session,
             get_settings,
             save_settings,

@@ -18,6 +18,7 @@ it("lets the reader select an existing session and request another conversation"
       disabled={false}
       onSelect={select}
       onCreate={create}
+      onDelete={vi.fn()}
       onError={vi.fn()}
     />,
   );
@@ -36,6 +37,7 @@ it("reports a creation failure without hiding existing sessions", async () => {
       disabled={false}
       onSelect={vi.fn()}
       onCreate={vi.fn().mockRejectedValue(new Error("保存できません"))}
+      onDelete={vi.fn()}
       onError={error}
     />,
   );
@@ -44,7 +46,39 @@ it("reports a creation failure without hiding existing sessions", async () => {
   );
   await waitFor(() => expect(error).toHaveBeenCalledOnce());
   expect(screen.getAllByRole("option")).toHaveLength(2);
-  expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(
-    false,
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "新しい会話を作成",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(false);
+});
+
+it("deletes only the confirmed session and retains the confirmation on failure", async () => {
+  const user = userEvent.setup(),
+    remove = vi.fn().mockRejectedValue(new Error("終了待ちです")),
+    error = vi.fn();
+  render(
+    <ChatSessionBar
+      sessions={sessions}
+      activeId="one"
+      disabled={false}
+      onSelect={vi.fn()}
+      onCreate={vi.fn()}
+      onDelete={remove}
+      onError={error}
+    />,
   );
+  await user.click(screen.getByRole("button", { name: "会話を削除" }));
+  await user.click(screen.getByRole("button", { name: "キャンセル" }));
+  expect(remove).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "会話を削除" }));
+  await user.click(screen.getByRole("button", { name: "削除する" }));
+  await waitFor(() => expect(error).toHaveBeenCalledOnce());
+  expect(remove).toHaveBeenCalledWith("one");
+  expect(screen.getByRole("dialog")).toBeDefined();
+  remove.mockResolvedValue(undefined);
+  await user.click(screen.getByRole("button", { name: "削除する" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });

@@ -73,6 +73,28 @@ fn row_session(r: &rusqlite::Row<'_>) -> rusqlite::Result<ChatSession> {
 }
 
 impl Store {
+    pub fn session_job_ids(&self, doc: &str, rev: &str, session: &str) -> Result<Vec<String>> {
+        self.require_session(doc, rev, session)?;
+        let db = self.0.lock().map_err(|e| e.to_string())?;
+        let mut q = db.prepare("SELECT id FROM session_messages WHERE session=?1 AND json_extract(data,'$.role')='assistant'").map_err(|e|e.to_string())?;
+        let rows = q
+            .query_map([session], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
+    }
+    pub fn delete_session(&self, doc: &str, rev: &str, session: &str) -> Result<()> {
+        self.0
+            .lock()
+            .map_err(|e| e.to_string())?
+            .execute(
+                "DELETE FROM chat_sessions WHERE id=?1 AND doc=?2 AND revision=?3",
+                params![session, doc, rev],
+            )
+            .map_err(|e| e.to_string())
+            .and_then(written)
+            .map(|_| ())
+    }
     pub fn sessions(&self, doc: &str, rev: &str) -> Result<Vec<ChatSession>> {
         let db = self.0.lock().map_err(|e| e.to_string())?;
         let mut q = db.prepare("SELECT id,title,created,updated FROM chat_sessions WHERE doc=?1 AND revision=?2 ORDER BY created,rowid").map_err(|e|e.to_string())?;
