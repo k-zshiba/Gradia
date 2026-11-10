@@ -1491,6 +1491,22 @@ export default function App() {
                       activeId: created.id,
                     });
                 }}
+                onDelete={async (sessionId) => {
+                  if (!doc) return;
+                  const target = key(doc);
+                  await api.deleteSession(doc.id, doc.revision, sessionId);
+                  const items = await api.sessions(doc.id, doc.revision);
+                  if (docRef.current && key(docRef.current) === target) {
+                    setChatSessions((previous) => ({
+                      documentKey: target,
+                      items,
+                      activeId:
+                        previous.activeId === sessionId
+                          ? items[0]?.id || ""
+                          : previous.activeId,
+                    }));
+                  }
+                }}
               />
               <div className="assistant-label">
                 <span className="ai-mark">C</span>

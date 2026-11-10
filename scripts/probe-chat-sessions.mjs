@@ -140,6 +140,57 @@ try {
   await expect(page.getByLabel("会話セッション")).toHaveValue(secondSession);
   await expect(page.getByText("別の会話の履歴", { exact: true })).toBeVisible();
   assert.equal(await readFile(first, "utf8"), original);
+  if (process.argv.includes("--delete")) {
+    await page.getByRole("button", { name: "会話を削除" }).click();
+    await page.getByRole("button", { name: "キャンセル", exact: true }).click();
+    await expect(
+      page.getByLabel("会話セッション").locator("option"),
+    ).toHaveCount(2);
+    for (const expected of [firstSession, ""]) {
+      await page.getByRole("button", { name: "会話を削除" }).click();
+      await page.getByRole("button", { name: "削除する", exact: true }).click();
+      await expect(
+        page.getByRole("dialog", { name: "会話を削除" }),
+      ).toHaveCount(0);
+      await expect(page.getByLabel("会話セッション")).toHaveValue(expected);
+    }
+    assert.equal(
+      await page.evaluate(
+        async (doc) =>
+          (
+            await (
+              await import("/src/api.ts")
+            ).api.sessions(doc.id, doc.revision)
+          ).length,
+        doc,
+      ),
+      0,
+    );
+    await expect(
+      page.getByText("最初の会話の履歴", { exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByText("別の会話の履歴", { exact: true })).toHaveCount(
+      0,
+    );
+    await expect(page.locator(".document-item")).toHaveCount(1);
+    await page.getByRole("button", { name: "新しい会話を作成" }).click();
+    await expect(page.getByLabel("会話セッション")).not.toHaveValue("");
+    const fresh = await page.getByLabel("会話セッション").inputValue();
+    assert.notEqual(fresh, firstSession);
+    assert.notEqual(fresh, secondSession);
+    await stop();
+    page = await launch();
+    await expect(page.getByLabel("会話セッション")).toHaveValue(fresh);
+    await expect(
+      page.getByText("最初の会話の履歴", { exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByText("別の会話の履歴", { exact: true })).toHaveCount(
+      0,
+    );
+    console.log(
+      "Native conversation deletion, last session, fresh start and restart passed.",
+    );
+  }
   console.log(
     "Native session creation, separate history, switching and restart passed.",
   );

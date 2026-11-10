@@ -66,6 +66,8 @@ export const api = {
   prepareUpdate: () => call<void>("prepare_update"),
   sessions: (id: string, revision: string) =>
     call<ChatSession[]>("list_chat_sessions", { id, revision }),
+  deleteSession: (id: string, revision: string, sessionId: string) =>
+    call<void>("delete_chat_session", { id, revision, sessionId }),
   createSession: (id: string, revision: string, ensure = false) =>
     call<ChatSession>("create_chat_session", { id, revision, ensure }),
   history: (id: string, revision: string, sessionId?: string) =>

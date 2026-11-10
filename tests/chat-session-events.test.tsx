@@ -11,6 +11,7 @@ const mock = vi.hoisted(() => ({
     sessions: vi.fn(),
     history: vi.fn(),
     createSession: vi.fn(),
+    deleteSession: vi.fn(),
     events: vi.fn(),
     cancel: vi.fn(),
     chat: vi.fn(),
@@ -128,4 +129,48 @@ it("cancels a late start without clearing the new session's running answer", asy
   );
   await user.click(screen.getByRole("button", { name: "回答を中断" }));
   expect(mock.api.cancel).toHaveBeenLastCalledWith("answer-two");
+});
+
+it("selects a remaining conversation after deletion and permits a fresh start after deleting the last", async () => {
+  const user = userEvent.setup();
+  let remaining = [...sessions];
+  mock.api.sessions.mockImplementation(async () => remaining);
+  mock.api.deleteSession.mockImplementation(async (_id, _rev, sessionId) => {
+    remaining = remaining.filter((s) => s.id !== sessionId);
+  });
+  mock.api.createSession.mockImplementation(async () => {
+    const created = {
+      id: "three",
+      title: "新しい会話",
+      createdAt: 3,
+      updatedAt: 3,
+    };
+    remaining = [created];
+    return created;
+  });
+  render(<App />);
+  await screen.findByText("最初の履歴");
+  for (const id of ["one", "two"]) {
+    await user.click(screen.getByRole("button", { name: "会話を削除" }));
+    await user.click(screen.getByRole("button", { name: "削除する" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mock.api.deleteSession).toHaveBeenLastCalledWith(
+      "book",
+      "preview",
+      id,
+    );
+    if (id === "one") await screen.findByText("別の履歴");
+  }
+  expect(screen.queryByText("最初の履歴")).toBeNull();
+  expect(screen.queryByText("別の履歴")).toBeNull();
+  expect(
+    (screen.getByRole("button", { name: "質問を送信" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  await user.click(screen.getByRole("button", { name: "新しい会話を作成" }));
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("会話セッション") as HTMLSelectElement).value,
+    ).toBe("three"),
+  );
 });
