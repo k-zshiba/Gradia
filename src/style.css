@@ -1720,3 +1720,115 @@ small {
   padding: 18px 28px;
   border-top: 1px solid var(--line);
 }
+
+.browser-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg, #f5f5f1);
+  color: var(--ink, #222);
+  overflow: hidden;
+}
+.browser-workspace button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #d4d8d5;
+  border-radius: 7px;
+  background: #fff;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+.browser-workspace button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.browser-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid #dce0dc;
+}
+.browser-header strong {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.browser-address {
+  display: flex;
+  gap: 7px;
+  padding: 12px 20px 8px;
+}
+.browser-address input {
+  flex: 1;
+  min-width: 100px;
+  padding: 9px 12px;
+  background: white;
+  border: 1px solid #d4d8d5;
+  border-radius: 7px;
+}
+.browser-tools,
+.browser-save {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+  padding: 6px 20px;
+}
+.browser-tools label,
+.browser-save label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.browser-tools input[type="range"] {
+  width: 160px;
+  accent-color: #317368;
+}
+.browser-tools output {
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+}
+.browser-save select {
+  max-width: 170px;
+  padding: 6px;
+  border: 1px solid #d4d8d5;
+  border-radius: 6px;
+  background: white;
+}
+.browser-save small {
+  font-size: 11px;
+  color: #686f6a;
+}
+.browser-status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 32px;
+  padding: 5px 20px;
+  font-size: 12px;
+  border-bottom: 1px solid #d4d8d5;
+  color: #59635c;
+}
+.browser-status span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.browser-error {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 20px;
+  background: #fff1e8;
+  color: #964b24;
+  font-size: 13px;
+}
+.browser-native-host {
+  flex: 1;
+  min-height: 100px;
+  background: white;
+}
