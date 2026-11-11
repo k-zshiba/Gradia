@@ -1,4 +1,5 @@
 mod auth;
+mod browser;
 #[cfg(test)]
 mod chat_delete_tests;
 mod codex;
@@ -17,6 +18,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 pub struct AppState {
+    browser: browser::Browser,
     root: PathBuf,
     store: store::Store,
     http: reqwest::Client,
@@ -71,6 +73,7 @@ impl AppState {
 #[cfg(test)]
 fn test_state(root: PathBuf) -> AppState {
     AppState {
+        browser: browser::Browser::default(),
         root,
         store: store::Store::open(std::path::Path::new(":memory:")).unwrap(),
         http: reqwest::Client::new(),
@@ -265,6 +268,22 @@ async fn prepare_update(state: State<'_, AppState>) -> Result<()> {
     Ok(())
 }
 pub fn run() {
+    let context = tauri::generate_context!();
+    #[cfg(debug_assertions)]
+    let mut context = context;
+    #[cfg(debug_assertions)]
+    if let Some(root) = std::env::var_os("STUDY_TOOL_TEST_DATA_DIR") {
+        for window in &mut context.config_mut().app.windows {
+            window.data_directory = Some(PathBuf::from(&root).join("trusted-profile"));
+            if let Ok(port) = std::env::var("STUDY_TOOL_TEST_DEBUG_PORT").and_then(|value| {
+                value
+                    .parse::<u16>()
+                    .map_err(|_| std::env::VarError::NotPresent)
+            }) {
+                window.additional_browser_args = Some(format!("--remote-debugging-port={port}"));
+            }
+        }
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -287,6 +306,7 @@ pub fn run() {
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?;
             app.manage(AppState {
+                browser: browser::Browser::default(),
                 root,
                 store,
                 http,
@@ -302,6 +322,14 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             list_documents,
+            browser::browser_open,
+            browser::browser_close,
+            browser::browser_action,
+            browser::browser_status,
+            browser::browser_capture,
+            browser::browser_display,
+            browser::browser_translate,
+            browser::browser_save,
             list_projects,
             create_project,
             rename_project,
@@ -335,6 +363,11 @@ pub fn run() {
             auth::account_status,
             codex::start_chat
         ])
-        .run(tauri::generate_context!())
-        .expect("Gradiaを起動できませんでした");
+        .build(context)
+        .expect("Gradiaを起動できませんでした")
+        .run(|_, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                browser::shutdown();
+            }
+        });
 }

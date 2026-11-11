@@ -318,6 +318,17 @@ impl Store {
         .map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())
     }
+    pub fn cache_browser_translation(&self, key: &str, text: &str) -> Result<()> {
+        self.0
+            .lock()
+            .map_err(|e| e.to_string())?
+            .execute(
+                "INSERT OR REPLACE INTO cache VALUES(?1,?2)",
+                params![key, text],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
     pub fn translations(&self, id: &str, rev: &str) -> Result<Value> {
         let db = self.0.lock().map_err(|e| e.to_string())?;
         let mut q=db.prepare("SELECT segment,text,key FROM translations JOIN cache USING(key) WHERE doc=?1 AND revision=?2").map_err(|e|e.to_string())?;

@@ -1304,6 +1304,8 @@ dependencies = [
  "uuid",
  "walkdir",
  "webbrowser",
+ "webview2-com",
+ "windows",
  "windows-sys 0.59.0",
  "zeroize",
 ]
