@@ -29,6 +29,35 @@ flowchart LR
 
 UIはTauriのWebView内で動きます。ファイルアクセス、HTTP取得、子プロセスの管理、SQLiteの操作、資格情報の管理はRustが担当します。取り込んだWebページのスクリプトは実行しません。
 
+## 元ページの閲覧と翻訳
+
+```mermaid
+flowchart LR
+  UI["信頼するローカルUI<br/>BrowserWorkspace"] -->|"固定した閲覧操作"| Service["browser.rs<br/>Snapshot・翻訳・保存"]
+  Service -->|"UI STAへ配送"| Native["browser_native.rs<br/>raw WebView2 controller"]
+  Native --> Remote["別環境・別プロファイル<br/>元ページのDOM・CSS・スクリプト"]
+  Native -->|"isolated world / objectId"| Snapshot["不変の原文Segment<br/>DOM Textノードの束縛"]
+  Snapshot --> Service
+  Service --> Translation["translation.rs<br/>モデル・全文脈・プロンプトのキャッシュ"]
+  Translation --> PLaMo["認証付きローカルPLaMo"]
+  Service -->|"所有するTextだけ更新"| Native
+  Service -->|"明示的な原文保存"| Reader["既存Document・Project<br/>閲覧・AI参照"]
+```
+
+元ページの閲覧はTauri管理のリモートWebViewを使いません。通常のTauri初期化スクリプトが入る構成では、元サイトへ内部APIが露出するためです。Rustが別環境のraw WebView2を作り、両環境の実際のUserDataFolderが異なることを確認します。Webメッセージ・ホストオブジェクトを無効にし、Tauriのプロトコル・invokeハンドラー・資格情報を登録しません。信頼する画面のCSPは変更しません。
+
+COMオブジェクトはUI STAの所有者にだけ保持します。非同期側へ渡すのは操作データと結果だけです。終了時は初期化とCDPの未完了応答を所有者が中断し、遅いコールバックを無視します。WebView2はClose後にコールバックを返さない場合があるため、終了をコールバック任せにしません。
+
+本文はisolated worldの固定スクリプトで解析します。メインworldの関数やDOM属性を権限確認に使いません。最大30,000テキストノードを走査し、最大2,000文・200,000文字を保持します。14,000 UTF-16単位を超えるノードは読み飛ばし、一部のみの解析として表示・保存時の注記へ伝えます。コード・数式要素・入力・編集可能・非表示・フレームの内容は対象外です。画面外の本文も対象ですが、DOM変更を監視して翻訳し続ける処理はありません。
+
+ページの世代、isolated worldのuniqueContextId、元DOMを保持するobjectIdをRust内部に置きます。全文の移動・同じURLの再読み込み・同一文書内のURL変更で世代と中断トークンを更新し、前の結果を適用しません。再解析前に以前の束縛を使って所有する変更を原文へ戻します。同一文書内の移動で訳文を新しい原文として取り込まないためです。DOMノードの接続と最後に書いた文字列の一致を確認し、サイト側が変更・交換したノードは上書きしません。翻訳結果はText.dataへ書き、生HTMLとして挿入しません。
+
+翻訳対象の選択は既存の`chosenSegments`と同じ固定順位を使い、Rustは現在のスナップショットへの所属を検証します。ローカル翻訳のプロンプト・原文の周辺文脈・モデル識別は既存の資料翻訳と共通です。ブラウザーのキャッシュは資料の訳文テーブルへ結び付けません。ジョブは既存の中断管理に登録し、通知は信頼するmain画面だけの`browser-job`へ送ります。
+
+HTTP・HTTPSの通常のブラウザー通信を行います。トップレベルの非HTTPスキーム・ローカルアドレスの直接指定、権限要求、ダウンロード、外部アプリ起動、証明書の無視、Basic認証は拒否します。利用者が押したHTTP・HTTPSの新規ウィンドウリンクは同じ領域で開きます。サイトのリソース通信には、記事取り込みのDNS固定・公開IP検査は適用しません。
+
+ブラウザーは別のワークスペースです。入る際に既存資料の翻訳・回答を中断します。資料や設定へ戻る前にネイティブ子画面を閉じます。原文を保存するときだけ、原文Segment・元URL・タイトル・安定したアンカーと選択プロジェクトを既存Documentへ保存します。AIはその保存した版の原文を参照します。
+
 ## 資料・翻訳のモデル
 
 ```mermaid
@@ -232,6 +261,9 @@ flowchart TB
 | `src-tauri/src/files.rs` / `store.rs`  | 原本・版・SQLite                      |
 | `src-tauri/src/web.rs`                 | 公開IP検査・DNS固定・転送と受信量制限  |
 | `src-tauri/src/translation.rs`         | PLaMo子プロセスとキャッシュ           |
+| `src/BrowserWorkspace.tsx` / `browser.ts` | 元ページの閲覧操作・翻訳表示・原文保存 |
+| `src-tauri/src/browser.rs` / `browser_native.rs` | スナップショット・中断・raw WebView2の所有 |
+| `src-tauri/src/browser_dom.js` / `browser_apply.js` | isolated world内の固定DOM操作 |
 | `src-tauri/src/auth.rs` / `codex.rs`   | OAuth・DPAPI・Codex・ゲート           |
 | `src-tauri/src/lib.rs`                 | IPC登録、ジョブ管理、更新前の終了処理 |
 | `scripts/*release*.mjs`                | 版検査、更新マニフェスト、Release公開 |
