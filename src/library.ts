@@ -1,6 +1,7 @@
 import { api } from "./api";
 import { importFile } from "./importers";
 import type { Document } from "./types";
+import { isMarkdownPath, markdownImageUrls } from "./markdown";
 
 export interface ImportResult {
   documents: Document[];
@@ -13,6 +14,7 @@ export async function importLocalFiles(
   projectId: string | null,
   progress: (message: string) => void,
   signal: AbortSignal,
+  folder = false,
 ): Promise<ImportResult> {
   const files = [...new Set(paths)];
   const result: ImportResult = {
@@ -25,11 +27,16 @@ export async function importLocalFiles(
     const label = `${index + 1} / ${files.length} · ${path.split(/[\\/]/).pop()}`;
     progress(`資料を取り込んでいます ${label}`);
     try {
-      const file = await api.read(path);
+      const withImages = folder && isMarkdownPath(path);
+      const file = await (withImages ? api.read(path, true) : api.read(path));
       const imported = await importFile(file, (page, total) =>
         progress(`PDFを解析しています ${page} / ${total} · ${label}`),
       );
-      result.documents.push(await api.save(imported, projectId));
+      result.documents.push(
+        await (withImages
+          ? api.save(imported, projectId, markdownImageUrls(imported.content))
+          : api.save(imported, projectId)),
+      );
     } catch (error) {
       result.failures.push({
         path,

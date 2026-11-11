@@ -165,7 +165,9 @@ try {
     .locator(".library")
     .getByRole("button", { name: /first.md/ })
     .click();
-  await expect(page.locator(".article h1")).toHaveText("first.md");
+  await expect(
+    page.getByRole("heading", { name: "first.md", exact: true }),
+  ).toBeVisible();
   await page.getByRole("slider", { name: "日本語の割合" }).fill("50");
   await page.getByRole("switch", { name: "英語と日本語を併記" }).click();
   await expect
@@ -188,7 +190,9 @@ try {
   await expect(page.getByLabel("プロジェクト", { exact: true })).toHaveValue(
     books,
   );
-  await expect(page.locator(".article h1")).toHaveText("first.md");
+  await expect(
+    page.getByRole("heading", { name: "first.md", exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole("switch", { name: "英語と日本語を併記" }),
   ).toBeChecked();

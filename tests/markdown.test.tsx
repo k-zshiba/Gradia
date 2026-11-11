@@ -1,7 +1,11 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../src/api", () => ({ desktop: false, api: {} }));
-import { matchesMarkdown, parseMarkdown } from "../src/markdown";
+import {
+  matchesMarkdown,
+  parseMarkdown,
+  markdownImageUrls,
+} from "../src/markdown";
 import { MarkdownPreview } from "../src/MarkdownPreview";
 import type { SegmentDisplay } from "../src/SegmentView";
 afterEach(cleanup);
@@ -15,7 +19,11 @@ const display = (changes: Partial<SegmentDisplay> = {}): SegmentDisplay => ({
   onPeek: vi.fn(),
   ...changes,
 });
-function preview(source: string, settings = display()) {
+function preview(
+  source: string,
+  settings = display(),
+  images: Record<string, string> = {},
+) {
   const document = parseMarkdown(source);
   const onJump = vi.fn();
   const ui = render(
@@ -25,12 +33,83 @@ function preview(source: string, settings = display()) {
       display={settings}
       onJump={onJump}
       onError={vi.fn()}
+      images={images}
     />,
   );
   return { ...ui, document, onJump };
 }
 
 describe("Markdown reading", () => {
+  it("preserves a saved image while displaying the translated sentence", () => {
+    const source = "See ![図](images/a.png) for details.";
+    const id = parseMarkdown(source).segments[0].id;
+    const saved = "data:image/png;base64,aGVsbG8=";
+    const ui = preview(
+      source,
+      display({
+        chosen: new Set([id]),
+        translations: {
+          [id]: {
+            segmentId: id,
+            text: "![図](images/a.png)を参照してください。",
+            status: "ready",
+          },
+        },
+      }),
+      { "images/a.png": saved },
+    );
+    expect(ui.getByRole("img", { name: "図" }).getAttribute("src")).toBe(saved);
+    expect(ui.container.textContent).toContain("を参照してください。");
+  });
+  it("resolves image definitions nested inside block quotes", () => {
+    const source = "> [pic]: images/a.png\n>\n> ![図][pic]";
+    expect(markdownImageUrls(source)).toEqual(["images/a.png"]);
+    const ui = preview(source, display(), {
+      "images/a.png": "data:image/png;base64,aGVsbG8=",
+    });
+    expect(ui.container.querySelectorAll("img")).toHaveLength(1);
+  });
+  it("extracts inline and defined image references without treating code or raw HTML as images", () => {
+    expect(
+      markdownImageUrls(
+        '![Inline](images/図%20one.png)\n\n> ![ref][PIC]\n\n![Duplicate](images/図%20one.png)\n\n[pic]: ../shared/a.jpg\n[unused]: secret.png\n\n```md\n![code](code.png)\n```\n\n<img src="html.png">',
+      ),
+    ).toEqual(["images/図%20one.png", "../shared/a.jpg"]);
+  });
+  it("shows only saved raster copies and falls back to alt text when decoding fails", () => {
+    const saved = "data:image/png;base64,aGVsbG8=";
+    const ui = preview(
+      "![Inline](images/a.png)\n\n![Reference][pic]\n\n[pic]: images/a.png\n\n![External](https://example.org/track.png)",
+      display(),
+      {
+        "images/a.png": saved,
+        "https://example.org/track.png": "https://example.org/track.png",
+      },
+    );
+    const images = ui.container.querySelectorAll("img");
+    expect(images).toHaveLength(2);
+    expect(Array.from(images).map((i) => i.getAttribute("src"))).toEqual([
+      saved,
+      saved,
+    ]);
+    expect(ui.getByRole("img", { name: "External" }).tagName).toBe("SPAN");
+    fireEvent.error(images[0]);
+    expect(ui.getByRole("img", { name: "Inline" }).tagName).toBe("SPAN");
+    const replaced = "data:image/png;base64,d29ybGQ=";
+    ui.rerender(
+      <MarkdownPreview
+        document={ui.document}
+        visible={ui.document.pages[0]}
+        display={display()}
+        images={{ "images/a.png": replaced }}
+        onJump={vi.fn()}
+        onError={vi.fn()}
+      />,
+    );
+    expect(ui.getByRole("img", { name: "Inline" }).getAttribute("src")).toBe(
+      replaced,
+    );
+  });
   it("does not attach saved translations to changed sentence text or locations", () => {
     const document = parseMarkdown("Read the value.");
     expect(matchesMarkdown(document, structuredClone(document.segments))).toBe(

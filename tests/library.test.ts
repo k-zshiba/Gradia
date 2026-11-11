@@ -85,3 +85,24 @@ it("finishes saving the current file on cancellation and leaves later files unto
   expect(result.cancelled).toBe(true);
   expect(mocks.read.mock.calls).toEqual([["first.md"]]);
 });
+
+it("imports Markdown image references only when files came from the selected folder", async () => {
+  mocks.read.mockImplementation(async (path) => ({
+    path,
+    content:
+      "![図](images/figure.png)\n\n![Ref][figure]\n\n[figure]: ../shared/diagram.jpg",
+  }));
+  await importLocalFiles(
+    ["book.md", "code.rs"],
+    null,
+    vi.fn(),
+    new AbortController().signal,
+    true,
+  );
+  expect(mocks.read.mock.calls).toEqual([["book.md", true], ["code.rs"]]);
+  expect(mocks.save.mock.calls[0][2]).toEqual([
+    "images/figure.png",
+    "../shared/diagram.jpg",
+  ]);
+  expect(mocks.save.mock.calls[1]).toHaveLength(2);
+});

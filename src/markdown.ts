@@ -16,6 +16,36 @@ export const isMarkdownPath = (path: string) => /\.(md|markdown)$/i.test(path);
 export const referenceKey = (id: string) =>
   id.trim().replace(/\s+/g, " ").toUpperCase();
 
+function markdownDefinitions(root: Root): Map<string, Definition> {
+  const definitions = new Map<string, Definition>();
+  function visit(node: Nodes) {
+    if (
+      node.type === "definition" &&
+      !definitions.has(referenceKey(node.identifier))
+    )
+      definitions.set(referenceKey(node.identifier), node);
+    if ("children" in node) node.children.forEach(visit);
+  }
+  visit(root);
+  return definitions;
+}
+
+export function markdownImageUrls(source: string): string[] {
+  const root = parser.parse(source);
+  const definitions = markdownDefinitions(root);
+  const urls = new Set<string>();
+  function visit(node: Nodes) {
+    if (node.type === "image") urls.add(node.url);
+    if (node.type === "imageReference") {
+      const url = definitions.get(referenceKey(node.identifier))?.url;
+      if (url) urls.add(url);
+    }
+    if ("children" in node) node.children.forEach(visit);
+  }
+  visit(root);
+  return [...urls];
+}
+
 export interface MarkdownDocument {
   root: Root;
   segments: Segment[];
@@ -153,16 +183,11 @@ export function parseMarkdown(source: string): MarkdownDocument {
     nodeSegments: new Map(),
     originals: new Map(),
     gaps: new Map(),
-    definitions: new Map(),
+    definitions: markdownDefinitions(root),
     anchors: new Map(),
     pages: [],
   };
   const slugs = new Set<string>();
-  for (const node of root.children)
-    if (node.type === "definition") {
-      const key = referenceKey(node.identifier);
-      if (!document.definitions.has(key)) document.definitions.set(key, node);
-    }
   let block = 0;
   function visit(node: Nodes, inList = false): Segment[] {
     const items: Segment[] = [];

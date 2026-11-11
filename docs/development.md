@@ -44,6 +44,7 @@ PRと手動実行のCIは署名鍵を使用せず、全テストと`npm run pack
 - `scripts/probe-materials.mjs`: 専用保存先でPDF原本・Monaco・Web抽出・中断を確認。
 - `scripts/probe-projects.mjs`: debug版を専用保存先で起動し、複数ファイル・フォルダー取り込み、個別失敗、プロジェクト共有・変更・削除・再起動復元を確認。ファイル選択ダイアログの戻り値だけを置き換え、実際の読み込み・抽出・SQLite保存を通します。
 - `scripts/probe-markdown.mjs`: 保存済みMarkdownのプレビュー版作成、版とプロジェクト関連の保持、整形表示、再起動復元を専用保存先で確認。`STUDY_TOOL_REAL_TRANSLATION=1`でPLaMoによる実翻訳、太字・コードの保持、併記と割合切り替えも確認します。
+- `scripts/probe-markdown-images.mjs`: フォルダー内の相対画像・参照形式・画像変更時の版分け・原本がなくなった後の復元・資料削除を確認。選択前の画像取り込み、フォルダー外のファイル・ジャンクション・外部URL・SVGの拒否も、専用保存先で確認します。
 - 上記プローブでは、翻訳サーバーが認証なしの要求を拒否することと、プライベートWeb取得を拒否することも確認します。
 - `scripts/probe-codex.mjs`: ローカル模擬サーバーとのプロトコル確認。OpenAIへの推論要求は行わない。
 - `scripts/probe-live-chat.mjs`: 接続済みインストール版のWebView2デバッグポート9224で、本人の契約枠による実回答を確認。開発者が明示的に実行する。
