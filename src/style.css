@@ -317,6 +317,47 @@ small {
   flex: 1;
   padding: 0 10px;
 }
+.library-selection {
+  margin: -8px 17px 12px;
+  font-size: 11px;
+}
+.library-selection > button {
+  width: 100%;
+}
+.library-selection .button-row {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.library-selection button {
+  font-size: 11px;
+}
+.document-choice {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.document-choice.selected {
+  background: #e3eadb;
+  border-color: #dce4d1;
+}
+.document-choice input {
+  flex-shrink: 0;
+  margin: 0;
+}
+.delete-document-targets {
+  max-height: 240px;
+  overflow: auto;
+  padding-left: 24px;
+}
+.delete-document-targets li {
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+.delete-document-targets small {
+  display: block;
+  color: #738168;
+}
 .section-label {
   font-size: 9px;
   font-weight: 600;

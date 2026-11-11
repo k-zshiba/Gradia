@@ -40,6 +40,7 @@ import { extractWeb } from "./importers";
 import { importLocalFiles, type ImportResult } from "./library";
 import { ProjectControls } from "./ProjectControls";
 import { DocumentDeleteButton } from "./DocumentDeleteButton";
+import { DocumentBulkDeleteButton } from "./DocumentBulkDeleteButton";
 import { isMarkdownPath, matchesMarkdown, parseMarkdown } from "./markdown";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SegmentView, type SegmentDisplay } from "./SegmentView";
@@ -60,6 +61,7 @@ import type {
   ChatSession,
   JobEvent,
   Project,
+  DocumentDeletion,
 } from "./types";
 
 const defaults: Settings = {
@@ -104,6 +106,12 @@ export default function App() {
   const [urlDialog, setUrlDialog] = useState(false);
   const [url, setUrl] = useState("");
   const [filter, setFilter] = useState("");
+  const [deleteSelection, setDeleteSelection] = useState<Set<string> | null>(
+    null,
+  );
+  useEffect(() => {
+    setDeleteSelection((selected) => (selected ? new Set() : null));
+  }, [filter, projectId]);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const [showToc, setShowToc] = useState(false);
@@ -605,6 +613,35 @@ export default function App() {
     if (id && active) localStorage.setItem(`study-active:${id}`, active);
     setFilter("");
   }
+  async function documentsDeleted(result: DocumentDeletion) {
+    const deleted = new Set(result.deleted.map((d) => `${d.id}:${d.revision}`));
+    const remaining = documents.filter((d) => !deleted.has(key(d)));
+    setDocuments(remaining);
+    setProjects((list) =>
+      list.map((p) => ({
+        ...p,
+        documentKeys: p.documentKeys.filter((k) => !deleted.has(k)),
+      })),
+    );
+    setDeleteSelection((selected) =>
+      selected ? new Set([...selected].filter((k) => !deleted.has(k))) : null,
+    );
+    if (docRef.current && deleted.has(key(docRef.current))) {
+      const available = project
+        ? remaining.filter((d) => project.documentKeys.includes(key(d)))
+        : remaining;
+      setActiveKey(available[0] ? key(available[0]) : "");
+    }
+    const [docs, nextProjects] = await Promise.all([
+      api.list(),
+      api.projects(),
+    ]);
+    setDocuments((current) => [
+      ...docs,
+      ...current.filter((d) => d.id === "sample"),
+    ]);
+    setProjects(nextProjects);
+  }
   async function addFiles(paths: string[], folder = false) {
     if (!paths.length) {
       setToast("このフォルダーには対応するファイルがありません");
@@ -845,6 +882,12 @@ export default function App() {
   const filteredDocuments = projectDocuments.filter((d) =>
     `${d.title} ${d.source}`.toLowerCase().includes(filter.toLowerCase()),
   );
+  const selectableDocuments = filteredDocuments.filter(
+    (d) => d.id !== "sample",
+  );
+  const selectedDocuments = selectableDocuments.filter((d) =>
+    deleteSelection?.has(key(d)),
+  );
   const groupedFiles = new Map<string, Document[]>();
   const otherDocuments: Document[] = [];
   for (const d of filteredDocuments) {
@@ -853,13 +896,8 @@ export default function App() {
     else groupedFiles.set(dir, [...(groupedFiles.get(dir) || []), d]);
   }
   function documentItem(d: Document) {
-    return (
-      <button
-        className={`document-item ${key(d) === activeKey ? "active" : ""}`}
-        key={key(d)}
-        title={d.source}
-        onClick={() => setActiveKey(key(d))}
-      >
+    const content = (
+      <>
         <span className={`type-icon ${d.kind}`}>
           <TypeIcon kind={d.kind} />
         </span>
@@ -874,6 +912,43 @@ export default function App() {
               : d.ratio > 0 && ` · 日本語 ${d.ratio}%`}
           </small>
         </span>
+      </>
+    );
+    if (deleteSelection !== null && d.id !== "sample")
+      return (
+        <label
+          className={`document-item document-choice ${deleteSelection.has(key(d)) ? "selected" : ""}`}
+          key={key(d)}
+          title={`${d.source} · 版 ${d.revision}`}
+        >
+          <input
+            type="checkbox"
+            aria-label={`${d.title}（版 ${d.revision}）を選択`}
+            checked={deleteSelection.has(key(d))}
+            disabled={!!busy}
+            onChange={(event) => {
+              const checked = event.target.checked;
+              setDeleteSelection((selected) => {
+                if (!selected) return selected;
+                const next = new Set(selected);
+                if (checked) next.add(key(d));
+                else next.delete(key(d));
+                return next;
+              });
+            }}
+          />
+          {content}
+        </label>
+      );
+    return (
+      <button
+        className={`document-item ${key(d) === activeKey ? "active" : ""}`}
+        key={key(d)}
+        title={d.source}
+        disabled={!!busy && deleteSelection !== null}
+        onClick={() => setActiveKey(key(d))}
+      >
+        {content}
       </button>
     );
   }
@@ -970,6 +1045,7 @@ export default function App() {
             <button
               className="icon"
               onClick={() => setLeftClosed((v) => !v)}
+              disabled={!!busy}
               aria-label="資料一覧の表示切替"
             >
               <PanelLeftClose size={17} />
@@ -1041,11 +1117,62 @@ export default function App() {
                 <Search size={15} />
                 <input
                   value={filter}
+                  disabled={!!busy}
                   onChange={(e) => setFilter(e.target.value)}
                   placeholder="資料を探す"
                   aria-label="資料を探す"
                 />
               </label>
+              <div className="library-selection">
+                {deleteSelection === null ? (
+                  <button
+                    className="text-button"
+                    disabled={!desktop || !!busy || !selectableDocuments.length}
+                    onClick={() => setDeleteSelection(new Set())}
+                  >
+                    選択して削除
+                  </button>
+                ) : (
+                  <>
+                    <div className="button-row">
+                      <button
+                        className="text-button"
+                        disabled={!!busy || !selectableDocuments.length}
+                        onClick={() =>
+                          setDeleteSelection(
+                            selectedDocuments.length ===
+                              selectableDocuments.length
+                              ? new Set()
+                              : new Set(selectableDocuments.map(key)),
+                          )
+                        }
+                      >
+                        {selectedDocuments.length ===
+                          selectableDocuments.length &&
+                        selectableDocuments.length
+                          ? "選択を解除"
+                          : "表示中の資料をすべて選択"}
+                      </button>
+                      <button
+                        className="text-button"
+                        disabled={!!busy}
+                        onClick={() => setDeleteSelection(null)}
+                      >
+                        選択を終了
+                      </button>
+                    </div>
+                    <DocumentBulkDeleteButton
+                      documents={selectedDocuments}
+                      disabled={!desktop || !!busy}
+                      onDeleted={documentsDeleted}
+                      onBusy={(deleting) =>
+                        setBusy(deleting ? "選択した資料を削除しています…" : "")
+                      }
+                      onError={error}
+                    />
+                  </>
+                )}
+              </div>
               <div className="library-scroll">
                 <p className="section-label">{project?.name || "MY READING"}</p>
                 {otherDocuments.map(documentItem)}
@@ -1137,28 +1264,7 @@ export default function App() {
                     document={doc}
                     disabled={!desktop || !!busy || doc.id === "sample"}
                     onError={error}
-                    onDeleted={async (result) => {
-                      const [docs, nextProjects] = await Promise.all([
-                        api.list(),
-                        api.projects(),
-                      ]);
-                      const deleted = new Set(
-                        result.deleted.map((d) => `${d.id}:${d.revision}`),
-                      );
-                      setDocuments(docs);
-                      setProjects(nextProjects);
-                      if (docRef.current && deleted.has(key(docRef.current))) {
-                        const group = nextProjects.find(
-                          (p) => p.id === projectId,
-                        );
-                        const remaining = group
-                          ? docs.filter((d) =>
-                              group.documentKeys.includes(key(d)),
-                            )
-                          : docs;
-                        setActiveKey(remaining[0] ? key(remaining[0]) : "");
-                      }
-                    }}
+                    onDeleted={documentsDeleted}
                   />
                   {doc.kind === "web" && (
                     <button
