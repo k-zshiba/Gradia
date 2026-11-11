@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { ChatSessionBar } from "./ChatSessionBar";
+import { BrowserWorkspace } from "./BrowserWorkspace";
 import { api, desktop } from "./api";
 import { chosenSegments, selectReferences, sourceLabel } from "./core";
 import { extractWeb } from "./importers";
@@ -91,6 +92,10 @@ export default function App() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const importAbort = useRef<AbortController | null>(null);
   const [activeKey, setActiveKey] = useState("");
+  const [browser, setBrowser] = useState<{
+    url: string;
+    returnKey: string;
+  } | null>(null);
   const doc = documents.find((d) => key(d) === activeKey);
   const [settings, setSettings] = useState<Settings>(defaults);
   const [showSettings, setShowSettings] = useState(false);
@@ -708,6 +713,12 @@ export default function App() {
       setBusy("");
     }
   }
+  function browse(target = url) {
+    setBrowser({ url: target, returnKey: activeKey });
+    setActiveKey("");
+    setUrlDialog(false);
+    setUrl("");
+  }
   function sample() {
     setProjectId("");
     localStorage.setItem("study-project", "");
@@ -866,6 +877,33 @@ export default function App() {
       </button>
     );
   }
+
+  if (browser)
+    return (
+      <BrowserWorkspace
+        url={browser.url}
+        projects={projects}
+        projectId={projectId}
+        onReturn={() => {
+          setActiveKey(browser.returnKey);
+          setBrowser(null);
+        }}
+        onSettings={() => {
+          setActiveKey(browser.returnKey);
+          setBrowser(null);
+          setShowSettings(true);
+        }}
+        onSaved={async (saved) => {
+          setDocuments((list) => [
+            saved,
+            ...list.filter((document) => key(document) !== key(saved)),
+          ]);
+          setProjects(await api.projects());
+          setActiveKey(key(saved));
+          setBrowser(null);
+        }}
+      />
+    );
 
   return (
     <div className="app">
@@ -1317,7 +1355,7 @@ export default function App() {
                     {doc.kind === "web" && (
                       <button
                         className="text-button"
-                        onClick={() => void api.open(doc.source).catch(error)}
+                        onClick={() => browse(doc.source)}
                       >
                         元ページ <ArrowUpRight size={13} />
                       </button>
@@ -1857,10 +1895,12 @@ export default function App() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                void addUrl();
+                browse();
               }}
             >
-              <p>公開されている記事や技術文書のURLを入力してください。</p>
+              <p>
+                元のWebページをアプリ内で開き、リンクをたどりながら日本語で読めます。
+              </p>
               <input
                 type="url"
                 required
@@ -1871,7 +1911,15 @@ export default function App() {
                 aria-label="WebページのURL"
               />
               <button className="primary" disabled={!!busy} type="submit">
-                本文を取り込む <ArrowUpRight size={16} />
+                元ページを開く <ArrowUpRight size={16} />
+              </button>
+              <button
+                className="text-button"
+                disabled={!!busy}
+                type="button"
+                onClick={() => void addUrl()}
+              >
+                記事の本文だけを取り込む
               </button>
             </form>
           </section>

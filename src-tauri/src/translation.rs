@@ -139,7 +139,7 @@ pub fn prompt(text: &str, context: &str) -> Result<(String, Vec<String>)> {
     let (masked, saved) = protect(text);
     Ok((format!("<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>context<|plamo:msg|>{context}<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>en<|plamo:msg|>{masked}<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>ja<|plamo:key|>form<|plamo:val|>plain<|plamo:msg|>"),saved))
 }
-async fn ensure_engine(state: &AppState) -> Result<()> {
+pub(crate) async fn ensure_engine(state: &AppState) -> Result<()> {
     let model_stamp = check_model_stamp(state)?;
     let mut guard = state.engine.lock().await;
     if let Some(engine) = guard.as_mut() {
@@ -299,8 +299,27 @@ async fn translate_segment(
     doc: &Document,
     segment: &Segment,
 ) -> Result<(String, bool)> {
-    let context = doc
-        .segments
+    let result = translate_original(state, &doc.segments, segment).await?;
+    state.store.translation(
+        &doc.id,
+        &doc.revision,
+        &segment.id,
+        &result.key,
+        &result.text,
+    )?;
+    Ok((result.text, result.cached))
+}
+pub(crate) struct LocalTranslation {
+    pub text: String,
+    pub key: String,
+    pub cached: bool,
+}
+pub(crate) async fn translate_original(
+    state: &AppState,
+    segments: &[Segment],
+    segment: &Segment,
+) -> Result<LocalTranslation> {
+    let context = segments
         .iter()
         .skip(segment.order.saturating_sub(2))
         .take(5)
@@ -343,10 +362,11 @@ async fn translate_segment(
         }
         restore(translated, &saved)?
     };
-    state
-        .store
-        .translation(&doc.id, &doc.revision, &segment.id, &key, &text)?;
-    Ok((text, from_cache))
+    Ok(LocalTranslation {
+        text,
+        key,
+        cached: from_cache,
+    })
 }
 #[tauri::command]
 pub async fn start_translation(
